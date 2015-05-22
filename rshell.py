@@ -925,6 +925,10 @@ class Shell(cmd.Cmd):
         dst_mode = auto(get_mode, dst_dirname)
         for src_filename in args[:-1]:
             src_filename = resolve_path(src_filename)
+            src_mode = auto(get_mode, src_filename)
+            if not mode_exists(src_mode):
+                self.print("File '{}' doesn't exist".format(src_filename))
+                return False
             if mode_isdir(dst_mode):
                 dst_filename = dst_dirname + '/' + os.path.basename(src_filename)
             else:

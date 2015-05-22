@@ -28,6 +28,16 @@ message something like this:
 rshell needs MicroPython firmware with ubinascii.unhexlify
 ```
 
+# Installation
+
+rshell.py needs getch.py and pyboard.py. There is a copy of getch.py and 
+pyboard.py in this repository, in the same directory that rshell.py came from.
+
+You'll also need to install pyserial. In ubuntu I did
+```
+sudo pip3 install pyserial
+```
+
 # Sample Session
 
 This shows a pyboard in its default state, copying a hello.py and then entering
@@ -207,8 +217,4 @@ optional arguments:
   -r, --recursive  remove directories and their contents recursively
   -f, --force      ignore nonexistant files and arguments
 ```
-# Installation
-
-rshell.py needs getch.py and pyboard.py. There is a copy of getch.py and 
-pyboard.py in this repository, in the same directory that rshell.py came from.
 

@@ -30,6 +30,8 @@ rshell needs MicroPython firmware with ubinascii.unhexlify
 
 # Installation
 
+rshell.py needs Python3. All of my testing was done using version 3.4.0.
+
 rshell.py needs getch.py and pyboard.py. There is a copy of getch.py and 
 pyboard.py in this repository, in the same directory that rshell.py came from.
 

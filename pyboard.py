@@ -41,8 +41,8 @@ class PyboardError(BaseException):
     pass
 
 class Pyboard:
-    def __init__(self, serial_device):
-        self.serial = serial.Serial(serial_device, baudrate=115200, interCharTimeout=1)
+    def __init__(self, serial_device, baudrate=115200):
+        self.serial = serial.Serial(serial_device, baudrate=baudrate, interCharTimeout=1)
 
     def close(self):
         self.serial.close()
@@ -127,7 +127,7 @@ class Pyboard:
         ret = ret.strip()
         return ret
 
-    def exec(self, command, data_consumer=None):
+    def exec(self, command):
         ret, ret_err = self.exec_raw(command)
         if ret_err:
             raise PyboardError('exception', ret, ret_err)

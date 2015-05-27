@@ -17,6 +17,7 @@ import inspect
 import os
 import pyboard
 import select
+import serial
 import shutil
 import sys
 import tempfile
@@ -1077,7 +1078,12 @@ class Shell(cmd.Cmd):
         # and allows us to check whether the main thread wants us to quit.
         pyb.serial.timeout = 1
         while not self.quit_serial_reader:
-            ch = pyb.serial.read(1)
+            try:
+                ch = pyb.serial.read(1)
+            except serial.serialutil.SerialException:
+                # THis happens if the pyboard reboots, or a USB port
+                # goes away.
+                return
             if not ch:
                 # This means that the read timed out. We'll check the quit
                 # flag and return if needed
@@ -1217,14 +1223,14 @@ def main():
         epilog=("You can specify the default serial port using the " +
                 "RSHELL_PORT environment variable.")
     )
-    #parser.add_argument(
-    #    "-b", "--baud",
-    #    dest="baud",
-    #    action="store",
-    #    type=int,
-    #    help="Set the baudrate used (default = %d)" % default_baud,
-    #    default=default_baud
-    #)
+    parser.add_argument(
+        "-b", "--baud",
+        dest="baud",
+        action="store",
+        type=int,
+        help="Set the baudrate used (default = %d)" % default_baud,
+        default=default_baud
+    )
     parser.add_argument(
         "-p", "--port",
         dest="port",
@@ -1258,7 +1264,7 @@ def main():
     args = parser.parse_args(sys.argv[1:])
 
     if args.debug:
-        #prnt("Baud = %d" % args.baud)
+        print("Baud = %d" % args.baud)
         print("Port = %s" % args.port)
         print("Debug = %s" % args.debug)
         print("Cmd = [%s]" % ', '.join(args.cmd))
@@ -1274,7 +1280,7 @@ def main():
         END_COLOR = ''
 
     global pyb
-    pyb = pyboard.Pyboard(args.port)
+    pyb = pyboard.Pyboard(args.port, baudrate=args.baud)
 
     if remote_eval(test_buffer):
         global HAS_BUFFER

@@ -66,7 +66,8 @@ cur_dir = ''
 
 HAS_BUFFER = False
 IS_UPY = False
-debug = False
+DEBUG = False
+BUFFER_SIZE = 512
 
 SIX_MONTHS = 183 * 24 * 60 * 60
 
@@ -140,9 +141,10 @@ def remote(func, *args, xfer_func=None, **kwargs):
     func_str += '    print(output)\n'
     func_str = func_str.replace('TIME_OFFSET', '{}'.format(TIME_OFFSET))
     func_str = func_str.replace('HAS_BUFFER', '{}'.format(HAS_BUFFER))
+    func_str = func_str.replace('BUFFER_SIZE', '{}'.format(BUFFER_SIZE))
     func_str = func_str.replace('IS_UPY', 'True')
-    if debug:
-        print('----- About to send the following to the pyboard -----')
+    if DEBUG:
+        print('----- About to send %d bytes of code to the pyboard -----' % len(func_str))
         print(func_str)
         print('-----')
     pyb.enter_raw_repl()
@@ -151,7 +153,7 @@ def remote(func, *args, xfer_func=None, **kwargs):
         xfer_func(*args, **kwargs)
     output, err = pyb.follow(timeout=10)
     pyb.exit_raw_repl()
-    if debug:
+    if DEBUG:
         print('-----Response-----')
         print(output)
         print('-----')
@@ -201,10 +203,10 @@ def copy_file(src_filename, dst_filename):
         with open(src_filename, 'rb') as src_file:
             with open(dst_filename, 'wb') as dst_file:
                 while True:
-                    buf = src_file.read(512)
+                    buf = src_file.read(BUFFER_SIZE)
                     if len(buf) > 0:
                         dst_file.write(buf)
-                    if len(buf) < 512:
+                    if len(buf) < BUFFER_SIZE:
                         break
         return True
     except:
@@ -408,12 +410,19 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
     """Function which runs on the pyboard. Matches up with send_file_to_remote."""
     import sys
     import ubinascii
+    import pyb
+    usb = pyb.USB_VCP()
+    if HAS_BUFFER and usb.isconnected():
+        # We don't want 0x03 bytes in the data to be interpreted as a Control-C
+        # This gets reset each time the REPL runs a line, so we don't need to
+        # worry about resetting it ourselves
+        usb.setinterrupt(-1)
     try:
         with open(dst_filename, dst_mode) as dst_file:
             bytes_remaining = filesize
             if not HAS_BUFFER:
                 bytes_remaining *= 2 # hexlify makes each byte into 2
-            buf_size = 512
+            buf_size = BUFFER_SIZE
             write_buf = bytearray(buf_size)
             read_buf = bytearray(buf_size)
             while bytes_remaining > 0:
@@ -448,11 +457,13 @@ def send_file_to_remote(src_file, dst_filename, filesize, dst_mode='wb'):
     bytes_remaining = filesize
     while bytes_remaining > 0:
         if HAS_BUFFER:
-            buf_size = 512
+            buf_size = BUFFER_SIZE
         else:
-            buf_size = 256
+            buf_size = BUFFER_SIZE // 2
         read_size = min(bytes_remaining,  buf_size)
         buf = src_file.read(read_size)
+        #sys.stdout.write('\r%d/%d' % (filesize - bytes_remaining, filesize))
+        #sys.stdout.flush()
         if HAS_BUFFER:
             pyb.serial.write(buf)
         else:
@@ -465,6 +476,7 @@ def send_file_to_remote(src_file, dst_filename, filesize, dst_mode='wb'):
             # This should only happen if an error occurs
             sys.stdout.write(chr(ord(ch)))
         bytes_remaining -= read_size
+    #sys.stdout.write('\r')
 
 
 def recv_file_from_remote(src_filename, dst_file, filesize):
@@ -474,7 +486,7 @@ def recv_file_from_remote(src_filename, dst_file, filesize):
     bytes_remaining = filesize
     if not HAS_BUFFER:
         bytes_remaining *= 2 # hexlify makes each byte into 2
-    buf_size = 512
+    buf_size = BUFFER_SIZE
     write_buf = bytearray(buf_size)
     while bytes_remaining > 0:
         read_size = min(bytes_remaining, buf_size)
@@ -504,9 +516,9 @@ def send_file_to_host(src_filename, dst_file, filesize):
         with open(src_filename, 'rb') as src_file:
             bytes_remaining = filesize
             if HAS_BUFFER:
-                buf_size = 512
+                buf_size = BUFFER_SIZE
             else:
-                buf_size = 256
+                buf_size = BUFFER_SIZE // 2
             while bytes_remaining > 0:
                 read_size = min(bytes_remaining, buf_size)
                 buf = src_file.read(read_size)
@@ -706,7 +718,7 @@ class ShellError(Exception):
 class Shell(cmd.Cmd):
     """Implements the shell as a command line interpreter."""
 
-    def __init__(self, filename=None, **kwargs):
+    def __init__(self, filename=None, timing=False, **kwargs):
         cmd.Cmd.__init__(self, **kwargs)
 
         self.stdout = ByteWriter(self.stdout.buffer)
@@ -714,6 +726,7 @@ class Shell(cmd.Cmd):
 
         self.filename = filename
         self.line_num = 0
+        self.timing = timing
 
         global cur_dir
         cur_dir = os.getcwd()
@@ -738,7 +751,7 @@ class Shell(cmd.Cmd):
         2 - So we can strip comments
         3 - So we can track line numbers
         """
-        if debug:
+        if DEBUG:
             print('Executing "%s"' % line)
         self.line_num += 1
         if line == "EOF":
@@ -753,7 +766,14 @@ class Shell(cmd.Cmd):
             line = line[0:comment_idx]
             line = line.strip()
         try:
-            return cmd.Cmd.onecmd(self, line)
+            if self.timing:
+                start_time = time.time()
+                result = cmd.Cmd.onecmd(self, line)
+                end_time = time.time()
+                self.print('took %.3f seconds' % (end_time - start_time))
+                return result
+            else:
+                return cmd.Cmd.onecmd(self, line)
         except ShellError as err:
             self.print(err)
         except SystemExit:
@@ -775,7 +795,7 @@ class Shell(cmd.Cmd):
     def postcmd(self, stop, line):
         if self.stdout != self.stdout_to_shell:
             if is_remote_path(self.redirect_filename):
-                if debug:
+                if DEBUG:
                     print('Copy redirected output to "%s"' % self.redirect_filename)
                 # This belongs on the remote. Copy/append now
                 filesize = self.stdout.tell()
@@ -838,11 +858,11 @@ class Shell(cmd.Cmd):
                                  self.redirect_filename)
             if args[redirect_index] == '>':
                 self.redirect_mode = 'wb'
-                if debug:
+                if DEBUG:
                     print('Redirecting (write) to', self.redirect_filename)
             else:
                 self.redirect_mode = 'ab'
-                if debug:
+                if DEBUG:
                     print('Redirecting (append) to', self.redirect_filename)
             if is_remote_path(self.redirect_filename):
                 self.stdout = tempfile.TemporaryFile()
@@ -1035,13 +1055,17 @@ class Shell(cmd.Cmd):
             args.filenames = ['.']
         for filename in args.filenames:
             filename = resolve_path(filename)
-            mode = auto(get_mode, filename)
+            stat = auto(get_stat, filename)
+            mode = stat_mode(stat)
             if not mode_exists(mode):
                 self.print("Cannot access '%s': No such file or directory" % 
                            filename)
                 continue
             if not mode_isdir(mode):
-                self.print(filename)
+                if args.long:
+                    print_long(filename, stat, self.print)
+                else:
+                    self.print(filename)
                 continue
             if len(args.filenames) > 1:
                 if idx > 0:
@@ -1081,8 +1105,14 @@ class Shell(cmd.Cmd):
             try:
                 ch = pyb.serial.read(1)
             except serial.serialutil.SerialException:
-                # THis happens if the pyboard reboots, or a USB port
+                # This happens if the pyboard reboots, or a USB port
                 # goes away.
+                return
+            except TypeError:
+                # These is a bug in serialposix.py starting with python 3.3
+                # which causes a TypeError during the handling of the
+                # select.error. So we treat this the same as
+                # serial.serialutil.SerialException:
                 return
             if not ch:
                 # This means that the read timed out. We'll check the quit
@@ -1132,7 +1162,6 @@ class Shell(cmd.Cmd):
                     pyb.serial.write(b'\r')
                 else:
                     pyb.serial.write(ch)
-                pyb.serial.flush()
         t.join()
 
     argparse_rm = (
@@ -1212,10 +1241,18 @@ class Shell(cmd.Cmd):
 
 def main():
     """The main program."""
-    default_baud = 115200
-    default_port = os.getenv("RSHELL_PORT")
+    try:
+        default_baud = int(os.getenv('RSHELL_BAUD'))
+    except:
+        default_baud = 115200
+    default_port = os.getenv('RSHELL_PORT')
     if not default_port:
         default_port = '/dev/ttyACM0'
+    global BUFFER_SIZE
+    try:
+        default_buffer_size = int(os.getenv('RSHELL_BUFFER_SIZE'))
+    except:
+        default_buffer_size = BUFFER_SIZE
     parser = argparse.ArgumentParser(
         prog="rshell",
         usage="%(prog)s [options] [command]",
@@ -1230,6 +1267,14 @@ def main():
         type=int,
         help="Set the baudrate used (default = %d)" % default_baud,
         default=default_baud
+    )
+    parser.add_argument(
+        "--buffer-size",
+        dest="buffer_size",
+        action="store",
+        type=int,
+        help="Set the buffer size used for transfers (default = %d)" % default_buffer_size,
+        default=default_buffer_size
     )
     parser.add_argument(
         "-p", "--port",
@@ -1257,6 +1302,20 @@ def main():
         default=False
     )
     parser.add_argument(
+        "--nowait",
+        dest="wait",
+        action="store_false",
+        help="Don't wait for serial port",
+        default=True
+    )
+    parser.add_argument(
+        "--timing",
+        dest="timing",
+        action="store_true",
+        help="Print timing information about each command",
+        default=False
+    )
+    parser.add_argument(
         "cmd",
        nargs=argparse.REMAINDER,
         help="Optional command to execute"
@@ -1264,13 +1323,18 @@ def main():
     args = parser.parse_args(sys.argv[1:])
 
     if args.debug:
-        print("Baud = %d" % args.baud)
-        print("Port = %s" % args.port)
         print("Debug = %s" % args.debug)
+        print("Port = %s" % args.port)
+        print("Baud = %d" % args.baud)
+        print("Wait = %d" % args.wait)
+        print("Timing = %d" % args.timing)
+        print("Buffer_size = %d" % args.buffer_size)
         print("Cmd = [%s]" % ', '.join(args.cmd))
 
-    global debug
-    debug = args.debug
+    global DEBUG
+    DEBUG = args.debug
+
+    BUFFER_SIZE = args.buffer_size
 
     if args.nocolor:
         global DIR_COLOR, PROMPT_COLOR, PY_COLOR, END_COLOR
@@ -1280,18 +1344,74 @@ def main():
         END_COLOR = ''
 
     global pyb
+    if args.wait and not os.path.exists(args.port):
+        sys.stdout.write("Waiting for '%s' to exist" % args.port)
+        sys.stdout.flush()
+        while not os.path.exists(args.port):
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            time.sleep(0.5)
+        sys.stdout.write("\n")
     pyb = pyboard.Pyboard(args.port, baudrate=args.baud)
+
+    # Bluetooth devices take some time to connect at startup, and writes
+    # issued while the remote isn't connected will fail. So we send newlines
+    # with pauses until one of our writes suceeds.
+    try:
+        # we send a Control-C which should kill the current line
+        # assuming we're talking to tha micropython repl. If we send
+        # a newline, then the junk might get interpreted as a command
+        # which will do who knows what.
+        pyb.serial.write(b'\x03')
+    except serial.serialutil.SerialException:
+        # Write failed. Now report that we're waiting and keep trying until
+        # a write succeeds
+        sys.stdout.write("Waiting for transport to be connected.")
+        while True:
+            time.sleep(0.5)
+            try:
+                pyb.serial.write(b'\x03')
+                break
+            except serial.serialutil.SerialException:
+                pass
+            sys.stdout.write('.')
+            sys.stdout.flush()
+        sys.stdout.write('\n')
+
+    # When connecting over wireless interface (like bluetooth), we often
+    # get a bunch of junk on the RX line when connecting, especially the first
+    # time after a powerup. So we drain that here. The junk can also originate
+    # from the newlines that we sent above.
+    save_timeout = pyb.serial.timeout
+    pyb.serial.timeout = 0.5
+    junk = pyb.serial.read(10)
+    if junk:
+        sys.stdout.write('Removing junk from the Rx serial line ')
+        timeout_count = 0
+        while timeout_count < 8: # We wait for 4 seconds with no data arriving
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            junk = pyb.serial.read(10)
+            if junk:
+                timeout_count = 0
+            else:
+                timeout_count += 1
+        pyb.serial.write(b'\x03')
+        sys.stdout.write('\n')
+    pyb.serial.timeout = save_timeout
+
+    # In theory the serial port is now ready for use.
 
     if remote_eval(test_buffer):
         global HAS_BUFFER
         HAS_BUFFER = True
-        if debug:
+        if DEBUG:
             print("Setting HAS_BUFFER to True")
     elif not remote_eval(test_unhexlify):
         print("rshell needs MicroPython firmware with ubinascii.unhexlify")
         return
     else:
-        if debug:
+        if DEBUG:
             print("MicroPython has unhexlify")
 
     global pyb_root_dirs
@@ -1301,13 +1421,13 @@ def main():
 
     if args.filename:
         with open(args.filename) as cmd_file:
-            shell = Shell(stdin=cmd_file, filename=args.filename)
+            shell = Shell(stdin=cmd_file, filename=args.filename, timing=args.timing)
             shell.cmdloop('')
     else:
         cmd_line = ' '.join(args.cmd)
         if cmd_line == '':
             print('Welcome to rshell. Use Control-D to exit.')
-        shell = Shell()
+        shell = Shell(timing=args.timing)
         shell.cmdloop(cmd_line)
 
 

@@ -6,6 +6,9 @@
    programs to the pyboard to carry out the required tasks.
 """
 
+# Take a look at https://repolinux.wordpress.com/2012/10/09/non-blocking-read-from-stdin-in-python/
+# to see if we can uise those ideas here.
+
 # from __future__ import print_function
 
 import argparse
@@ -60,8 +63,6 @@ PROMPT_COLOR = LT_GREEN
 PY_COLOR     = DK_GREEN
 END_COLOR    = NO_COLOR
 
-pyb = None
-pyb_root_dirs = []
 cur_dir = ''
 
 HAS_BUFFER = False
@@ -82,6 +83,60 @@ QUIT_REPL_BYTE = bytes((ord(QUIT_REPL_CHAR) - ord('@'),)) # Control-X
 # understand timezones and has no concept of daylight savings time. UTC also
 # doesn't daylight savings time, so this works well.
 TIME_OFFSET = calendar.timegm((2000, 1, 1, 0, 0, 0, 0, 0, 0))
+
+DEVS = []
+DEFAULT_DEV = None
+
+def add_device(dev):
+    """Adds a device to the list of devices we know about."""
+    global DEVS
+    if find_device_by_name(dev.name):
+        # This name is taken - make it unique
+        dev.name += '-%d' % (len(DEVS) + 1)
+    dev.name_path = '/' + dev.name + '/'
+    DEVS.append(dev)
+    global DEFAULT_DEV
+    if DEFAULT_DEV is None:
+        DEFAULT_DEV = dev
+
+def find_device_by_name(name):
+    """Tries to find a board by board name."""
+    if not name:
+        return DEFAULT_DEV
+    for dev in DEVS:
+        if dev.name == name:
+            return dev
+    return None
+
+def align_cell(fmt, elem, width):
+    """Returns an aligned element."""
+    if fmt == "<":
+        return elem + ' ' * (width - len(elem))
+    if fmt == ">":
+        return ' ' * (width - len(elem)) + elem
+    return elem
+
+
+def column_print(fmt, rows, print_func):
+    """Prints a formatted list, adjusting the width so everything fits.
+    fmt contains a single character for each column. < indicates that the
+    column should be left justified, > indicates that the column should
+    be right justified. The last column may be a space which imples left
+    justification and no padding.
+
+    """
+    # Figure out the max width of each column
+    num_cols = len(fmt)
+    width = [max(0 if isinstance(row, str) else len(row[i]) for row in rows)
+             for i in range(num_cols)]
+    for row in rows:
+        if isinstance(row, str):
+            # Print a seperator line
+            print_func(' '.join([row * width[i] for i in range(num_cols)]))
+        else:
+            print_func(' '.join([align_cell(fmt[i], row[i], width[i])
+                                 for i in range(num_cols)]))
+
 
 def resolve_path(path):
     """Resolves path and converts it into an absolute path."""
@@ -108,17 +163,31 @@ def resolve_path(path):
     return '/'.join(new_comps)
 
 
-def is_remote_path(filename):
+def get_dev_and_path(filename):
     """Determines if a given file is located locally or remotely. We assume
        that any directories from the pyboard take precendence over local
-       directories of the same name. Currently, the pyboard can have /flash
-       and /sdcard.
+       directories of the same name. /flash and /sdcard are associated with
+       the default device. /dev_name/path where dev_name is the name of a
+       given device is also considered to be associaed with the named device.
+
+       If the file is associated with a remote device, then this function
+       returns a tuple (dev, dev_filename) where dev is the device and
+       dev_filename is the portion of the filename relative to the device.
+
+       If the file is not associated with the remote device, then the dev
+       portion of the returned tuple will be None.
     """
+    if DEFAULT_DEV:
+        if DEFAULT_DEV.is_root_path(filename):
+            return (DEFAULT_DEV, filename)
     test_filename = filename + '/'
-    for root_dir in pyb_root_dirs:
-        if test_filename.startswith(root_dir):
-            return   True
-    return False
+    for dev in DEVS:
+        if test_filename.startswith(dev.name_path):
+            dev_filename = filename[len(dev.name_path)-1:]
+            if dev_filename == '':
+                dev_filename = '/'
+            return (dev, dev_filename)
+    return (None, filename)
 
 
 def remote_repr(i):
@@ -127,44 +196,6 @@ def remote_repr(i):
     if repr_str and repr_str[0] == '<':
         return 'None'
     return repr_str
-
-
-def remote(func, *args, xfer_func=None, **kwargs):
-    """Calls func with the indicated args on the micropython board."""
-    args_arr = [remote_repr(i) for i in args]
-    kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k,v in kwargs.items()]
-    func_str = inspect.getsource(func)
-    func_str += 'output = ' + func.__name__ + '('
-    func_str += ', '.join(args_arr + kwargs_arr)
-    func_str += ')\n'
-    func_str += 'if output is not None:\n'
-    func_str += '    print(output)\n'
-    func_str = func_str.replace('TIME_OFFSET', '{}'.format(TIME_OFFSET))
-    func_str = func_str.replace('HAS_BUFFER', '{}'.format(HAS_BUFFER))
-    func_str = func_str.replace('BUFFER_SIZE', '{}'.format(BUFFER_SIZE))
-    func_str = func_str.replace('IS_UPY', 'True')
-    if DEBUG:
-        print('----- About to send %d bytes of code to the pyboard -----' % len(func_str))
-        print(func_str)
-        print('-----')
-    pyb.enter_raw_repl()
-    output = pyb.exec_raw_no_follow(func_str)
-    if xfer_func:
-        xfer_func(*args, **kwargs)
-    output, err = pyb.follow(timeout=10)
-    pyb.exit_raw_repl()
-    if DEBUG:
-        print('-----Response-----')
-        print(output)
-        print('-----')
-    return output
-
-
-def remote_eval(func, *args, **kwargs):
-    """Calls func with the indicated args on the micropython board, and
-       converts the response back into python by using eval.
-    """
-    return eval(remote(func, *args, **kwargs))
 
 
 def print_bytes(byte_str):
@@ -179,20 +210,30 @@ def auto(func, filename, *args, **kwargs):
     """If `filename` is a remote file, then this function calls func on the
        micropython board, otherwise it calls it locally.
     """
-    if is_remote_path(filename):
-        return remote_eval(func, filename, *args, **kwargs)
-    return func(filename, *args, **kwargs)
+    dev, dev_filename = get_dev_and_path(filename)
+    if dev is None:
+        return func(dev_filename, *args, **kwargs)
+    return dev.remote_eval(func, dev_filename, *args, **kwargs)
 
+def board_name():
+    try:
+        import board
+        name = board.name
+    except:
+        name = 'pyboard'
+    return repr(name)
 
 def cat(src_filename, dst_file):
     """Copies the contents of the indicated file to an already opened file."""
-    if is_remote_path(src_filename):
-        filesize = remote_eval(get_filesize, src_filename)
-        return remote(send_file_to_host, src_filename, dst_file, filesize,
-                      xfer_func=recv_file_from_remote)
-    with open(src_filename, 'rb') as txtfile:
-        for line in txtfile:
-            dst_file.write(line)
+    (dev, dev_filename) = get_dev_and_path(src_filename)
+    if dev is None:
+        with open(dev_filename, 'rb') as txtfile:
+            for line in txtfile:
+                dst_file.write(line)
+    else:
+        filesize = dev.remote_eval(get_filesize, dev_filename)
+        return dev.remote(send_file_to_host, dev_filename, dst_file, filesize,
+                          xfer_func=recv_file_from_remote)
 
 
 def copy_file(src_filename, dst_filename):
@@ -217,18 +258,34 @@ def cp(src_filename, dst_filename):
     """Copies one file to another. The source file may be local or remote and
        the destnation file may be local or remote.
     """
-    src_is_remote = is_remote_path(src_filename)
-    dst_is_remote = is_remote_path(dst_filename)
-    if src_is_remote == dst_is_remote:
-        return auto(copy_file, src_filename, dst_filename)
+    src_dev, src_dev_filename = get_dev_and_path(src_filename)
+    dst_dev, dst_dev_filename = get_dev_and_path(dst_filename)
+    if src_dev is dst_dev:
+        # src and dst are either on the same remote, or both are on the host
+        return auto(copy_file, src_filename, dst_dev_filename)
+
     filesize = auto(get_filesize, src_filename)
-    if src_is_remote:
-        with open(dst_filename, 'wb') as dst_file:
-            return remote(send_file_to_host, src_filename, dst_file, filesize,
-                          xfer_func=recv_file_from_remote)
-    with open(src_filename, 'rb') as src_file:
-        return remote(recv_file_from_host, src_file, dst_filename, filesize,
-                      xfer_func=send_file_to_remote)
+
+    if dst_dev is None:
+        # Copying from remote to host
+        with open(dst_dev_filename, 'wb') as dst_file:
+            return src_dev.remote(send_file_to_host, src_dev_filename, dst_file,
+                                  filesize, xfer_func=recv_file_from_remote)
+    if src_dev is None:
+        # Copying from host to remote
+        with open(src_dev_filename, 'rb') as src_file:
+            return dst_dev.remote(recv_file_from_host, src_file, dst_dev_filename,
+                                  filesize, xfer_func=send_file_to_remote)
+
+    # Copying from remote A to remote B. We first copy the file
+    # from remote A to the host and then from the host to remote B
+    host_temp_file = tempfile.TemporaryFile()
+    if src_dev.remote(send_file_to_host, src_dev_filename, host_temp_file,
+                      filesize, xfer_func=recv_file_from_remote):
+        host_temp_file.seek(0)
+        return dst_dev.remote(recv_file_from_host, host_temp_file, dst_dev_filename,
+                              filesize, xfer_func=send_file_to_remote)
+    return False
 
 
 def eval_str(str):
@@ -298,6 +355,9 @@ def listdir_stat(dirname):
             # is relative to Jan 1, 1970.
             return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
         return rstat
+    if dirname == '/':
+        return tuple((file, stat('/' + file))
+                     for file in os.listdir(dirname))
     return tuple((file, stat(dirname + '/' + file))
                  for file in os.listdir(dirname))
 
@@ -395,12 +455,6 @@ def set_time(time):
     rtc.datetime(time)
 
 
-def sync_time():
-    """Sets the time on the pyboard to match the time on the host."""
-    now = time.localtime(time.time())
-    remote(set_time, (now.tm_year, now.tm_mon, now.tm_mday, now.tm_wday + 1,
-                      now.tm_hour, now.tm_min, now.tm_sec, 0))
-
 # 0x0D's sent from the host get transformed into 0x0A's, and 0x0A sent to the
 # host get converted into 0x0D0A when using sys.stdin. sys.tsin.buffer does
 # no transformations, so if that's available, we use it, otherwise we need
@@ -450,7 +504,7 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
         return False
 
 
-def send_file_to_remote(src_file, dst_filename, filesize, dst_mode='wb'):
+def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
     """Intended to be passed to the `remote` function as the xfer_func argument.
        Matches up with recv_file_from_host.
     """
@@ -465,12 +519,12 @@ def send_file_to_remote(src_file, dst_filename, filesize, dst_mode='wb'):
         #sys.stdout.write('\r%d/%d' % (filesize - bytes_remaining, filesize))
         #sys.stdout.flush()
         if HAS_BUFFER:
-            pyb.serial.write(buf)
+            dev.pyb.serial.write(buf)
         else:
-            pyb.serial.write(binascii.hexlify(buf))
+            dev.pyb.serial.write(binascii.hexlify(buf))
         # Wait for ack so we don't get too far ahead of the remote
         while True:
-            ch = pyb.serial.read(1)
+            ch = dev.pyb.serial.read(1)
             if ch == b'\x06':
                 break
             # This should only happen if an error occurs
@@ -479,7 +533,7 @@ def send_file_to_remote(src_file, dst_filename, filesize, dst_mode='wb'):
     #sys.stdout.write('\r')
 
 
-def recv_file_from_remote(src_filename, dst_file, filesize):
+def recv_file_from_remote(dev, src_filename, dst_file, filesize):
     """Intended to be passed to the `remote` function as the xfer_func argument.
        Matches up with send_file_to_host.
     """
@@ -493,7 +547,7 @@ def recv_file_from_remote(src_filename, dst_file, filesize):
         buf_remaining = read_size
         buf_index = 0
         while buf_remaining > 0:
-            read_buf = pyb.serial.read(buf_remaining)
+            read_buf = dev.pyb.serial.read(buf_remaining)
             bytes_read = len(read_buf)
             if bytes_read:
                 write_buf[buf_index:bytes_read] = read_buf[0:bytes_read]
@@ -504,7 +558,7 @@ def recv_file_from_remote(src_filename, dst_file, filesize):
         else:
             dst_file.write(binascii.unhexlify(write_buf[0:read_size]))
         # Send an ack to the remote as a form of flow control
-        pyb.serial.write(b'\x06')   # ASCII ACK is 0x06
+        dev.pyb.serial.write(b'\x06')   # ASCII ACK is 0x06
         bytes_remaining -= read_size
 
 
@@ -695,6 +749,18 @@ def add_arg(*args, **kwargs):
     """Returns a list containing args and kwargs."""
     return (args, kwargs)
 
+def connect_serial(port, baud, wait=False):
+    if DEBUG:
+        print('connect serial %s %d' % (port, baud))
+
+    try:
+        dev = DeviceSerial(port, baud, wait)
+    except ShellError as err:
+        sys.stderr.write(err)
+        sys.stderr.write('\n')
+        return
+    add_device(dev)
+
 
 class ByteWriter(object):
     """Class which implements a write method which can takes bytes or str."""
@@ -711,9 +777,126 @@ class ByteWriter(object):
     def flush(self):
         self.stdout.flush()
 
+
+class Device(object):
+
+    def __init__(self):
+        # We assume that
+        self.has_buffer = False # needs to be set for remote_eval to work
+        self.has_buffer = self.remote_eval(test_buffer)
+        if self.has_buffer:
+            if DEBUG:
+                print("Setting has_buffer to True")
+        elif not self.remote_eval(test_unhexlify):
+            raise ShellError('rshell needs MicroPython firmware with ubinascii.unhexlify')
+        else:
+            if DEBUG:
+                print("MicroPython has unhexlify")
+        self.root_dirs = ['/{}/'.format(dir) for dir in self.remote_eval(listdir, '/')]
+        self.sync_time()
+        self.name = self.remote_eval(board_name)
+
+    def is_root_path(self, filename):
+        test_filename = filename + '/'
+        for root_dir in self.root_dirs:
+            if test_filename.startswith(root_dir):
+                return True
+        return False
+
+    def remote(self, func, *args, xfer_func=None, **kwargs):
+        """Calls func with the indicated args on the micropython board."""
+        global HAS_BUFFER
+        HAS_BUFFER = self.has_buffer
+        args_arr = [remote_repr(i) for i in args]
+        kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k,v in kwargs.items()]
+        func_str = inspect.getsource(func)
+        func_str += 'output = ' + func.__name__ + '('
+        func_str += ', '.join(args_arr + kwargs_arr)
+        func_str += ')\n'
+        func_str += 'if output is not None:\n'
+        func_str += '    print(output)\n'
+        func_str = func_str.replace('TIME_OFFSET', '{}'.format(TIME_OFFSET))
+        func_str = func_str.replace('HAS_BUFFER', '{}'.format(HAS_BUFFER))
+        func_str = func_str.replace('BUFFER_SIZE', '{}'.format(BUFFER_SIZE))
+        func_str = func_str.replace('IS_UPY', 'True')
+        if DEBUG:
+            print('----- About to send %d bytes of code to the pyboard -----' % len(func_str))
+            print(func_str)
+            print('-----')
+        self.pyb.enter_raw_repl()
+        output = self.pyb.exec_raw_no_follow(func_str)
+        if xfer_func:
+            xfer_func(self, *args, **kwargs)
+        output, err = self.pyb.follow(timeout=10)
+        self.pyb.exit_raw_repl()
+        if DEBUG:
+            print('-----Response-----')
+            print(output)
+            print('-----')
+        return output
+
+    def remote_eval(self, func, *args, **kwargs):
+        """Calls func with the indicated args on the micropython board, and
+           converts the response back into python by using eval.
+        """
+        return eval(self.remote(func, *args, **kwargs))
+
+    def sync_time(self):
+        """Sets the time on the pyboard to match the time on the host."""
+        now = time.localtime(time.time())
+        self.remote(set_time, (now.tm_year, now.tm_mon, now.tm_mday, now.tm_wday + 1,
+                               now.tm_hour, now.tm_min, now.tm_sec, 0))
+
+
+class DeviceSerial(Device):
+
+    def __init__(self, port, baud, wait):
+        if wait and not os.path.exists(port):
+            sys.stdout.write("Waiting for '%s' to exist" % port)
+            sys.stdout.flush()
+            while not os.path.exists(port):
+                sys.stdout.write('.')
+                sys.stdout.flush()
+                time.sleep(0.5)
+            sys.stdout.write("\n")
+
+        self.dev_name_short = port
+        self.dev_name_long = '%s at %d baud' % (port, baud)
+
+        self.pyb = pyboard.Pyboard(port, baudrate=baud)
+
+        # Bluetooth devices take some time to connect at startup, and writes
+        # issued while the remote isn't connected will fail. So we send newlines
+        # with pauses until one of our writes suceeds.
+        try:
+            # we send a Control-C which should kill the current line
+            # assuming we're talking to tha micropython repl. If we send
+            # a newline, then the junk might get interpreted as a command
+            # which will do who knows what.
+            self.pyb.serial.write(b'\x03')
+        except serial.serialutil.SerialException:
+            # Write failed. Now report that we're waiting and keep trying until
+            # a write succeeds
+            sys.stdout.write("Waiting for transport to be connected.")
+            while True:
+                time.sleep(0.5)
+                try:
+                    self.pyb.serial.write(b'\x03')
+                    break
+                except serial.serialutil.SerialException:
+                    pass
+                sys.stdout.write('.')
+                sys.stdout.flush()
+            sys.stdout.write('\n')
+
+        # In theory the serial port is now ready to use
+        Device.__init__(self)
+
+
 class ShellError(Exception):
     """Errors that we want to report to the user and keep running."""
     pass
+
 
 class Shell(cmd.Cmd):
     """Implements the shell as a command line interpreter."""
@@ -722,6 +905,7 @@ class Shell(cmd.Cmd):
         cmd.Cmd.__init__(self, **kwargs)
 
         self.stdout = ByteWriter(self.stdout.buffer)
+        self.stderr = ByteWriter(sys.stderr.buffer)
         self.stdout_to_shell = self.stdout
 
         self.filename = filename
@@ -770,12 +954,12 @@ class Shell(cmd.Cmd):
                 start_time = time.time()
                 result = cmd.Cmd.onecmd(self, line)
                 end_time = time.time()
-                self.print('took %.3f seconds' % (end_time - start_time))
+                print('took %.3f seconds' % (end_time - start_time))
                 return result
             else:
                 return cmd.Cmd.onecmd(self, line)
         except ShellError as err:
-            self.print(err)
+            self.print_err(err)
         except SystemExit:
             # When you use -h with argparse it winds up call sys.exit, which
             # raises a SystemExit. We intercept it because we don't want to
@@ -783,7 +967,7 @@ class Shell(cmd.Cmd):
             return False
 
     def default(self, line):
-        self.print("Unrecognized command:", line)
+        self.print_err("Unrecognized command:", line)
 
     def emptyline(self):
         """We want empty lines to do nothing. By default they would repeat the
@@ -794,26 +978,36 @@ class Shell(cmd.Cmd):
 
     def postcmd(self, stop, line):
         if self.stdout != self.stdout_to_shell:
-            if is_remote_path(self.redirect_filename):
+            if self.redirect_dev is not None:
+                # Redirecting to a remote device, now that we're finished the
+                # command, we can copy the collected output to the remote.
                 if DEBUG:
                     print('Copy redirected output to "%s"' % self.redirect_filename)
                 # This belongs on the remote. Copy/append now
                 filesize = self.stdout.tell()
                 self.stdout.seek(0)
-                remote(recv_file_from_host, self.stdout, self.redirect_filename,
-                       filesize, dst_mode=self.redirect_mode,
-                       xfer_func=send_file_to_remote)
+                self.redirect_dev.remote(recv_file_from_host, self.stdout,
+                                         self.redirect_filename, filesize,
+                                         dst_mode=self.redirect_mode,
+                                         xfer_func=send_file_to_remote)
             self.stdout.close()
             self.stdout = self.stdout_to_shell
         self.set_prompt()
         return stop
 
-    def print(self, *args, end='\n'):
+    def print(self, *args, end='\n', file=None):
         """Convenience function so you don't need to remember to put the \n
-           when using self.stdout.write.
+           at the end of the line.
         """
-        self.stdout.write(bytes(' '.join(str(arg) for arg in args), encoding='utf-8'))
-        self.stdout.write(bytes(end, encoding='utf-8'))
+        if file is None:
+            file = self.stdout
+        file.write(bytes(' '.join(str(arg) for arg in args), encoding='utf-8'))
+        file.write(bytes(end, encoding='utf-8'))
+
+    def print_err(self, *args, end='\n'):
+        """Similar to print, but prints to stderr.
+        """
+        self.print(*args, end=end, file=self.stderr)
 
     def create_argparser(self, cmd):
         try:
@@ -843,6 +1037,7 @@ class Shell(cmd.Cmd):
         """
         args = line.split()
         self.redirect_filename = ''
+        self.redirect_dev = None
         redirect_index = -1
         if '>' in args:
             redirect_index = args.index('>')
@@ -864,10 +1059,13 @@ class Shell(cmd.Cmd):
                 self.redirect_mode = 'ab'
                 if DEBUG:
                     print('Redirecting (append) to', self.redirect_filename)
-            if is_remote_path(self.redirect_filename):
-                self.stdout = tempfile.TemporaryFile()
-            else:
+            self.redirect_dev, self.redirect_filename = get_dev_and_path(self.redirect_filename)
+            if self.redirect_dev is None:
                 self.stdout = open(self.redirect_filename, self.redirect_mode)
+            else:
+                # Redirecting to a remote device. We collect the results locally
+                # and copy them to the remote device at the end of the command.
+                self.stdout = tempfile.TemporaryFile()
 
             del args[redirect_index + 1]
             del args[redirect_index]
@@ -887,6 +1085,16 @@ class Shell(cmd.Cmd):
         for idx in range(len(args)):
             self.print("arg[%d] = '%s'" % (idx, args[idx]))
 
+    def do_boards(self, line):
+        """boards
+
+           Lists the boards that rshell is currently connected to.
+        """
+        rows = []
+        for dev in DEVS:
+            rows.append((dev.name, '@ %s' % dev.dev_name_short))
+        column_print('< ', rows, self.print)
+
     def do_cat(self, line):
         """cat FILENAME...
 
@@ -900,10 +1108,10 @@ class Shell(cmd.Cmd):
             filename = resolve_path(filename)
             mode = auto(get_mode, filename)
             if not mode_exists(mode):
-                self.print("Cannot access '%s': No such file" % filename)
+                self.print_err("Cannot access '%s': No such file" % filename)
                 continue
             if not mode_isfile(mode):
-                self.print("'%s': is not a file" % filename)
+                self.print_err("'%s': is not a file" % filename)
                 continue
             cat(filename, self.stdout)
 
@@ -928,7 +1136,34 @@ class Shell(cmd.Cmd):
             self.prev_dir = cur_dir
             cur_dir = dirname
         else:
-            self.print("Directory '%s' does not exist" % dirname)
+            self.print_err("Directory '%s' does not exist" % dirname)
+
+    def do_connect(self, line):
+        """connect TYPE TYPE_PARAMS
+           connect serial port [baud]
+
+           Connects a pyboard to rshell.
+        """
+        args = self.line_to_args(line)
+        num_args = len(args)
+        if num_args < 1:
+            self.print_err('Missing connection TYPE')
+            return
+        if args[0] == 'serial':
+            if num_args < 2:
+                self.print_err('Missing serial port')
+                return
+            port = args[1]
+            if num_args < 3:
+                baud = 115200
+            else:
+                try:
+                    baud = int(args[2])
+                except:
+                    self.print_err("Expecting baud to be numeric. Found '%s'" % args[3])
+            connect_serial(port, baud)
+        else:
+            self.print_err('Unrecognized connection TYPE: %s', args[1])
 
     def do_cp(self, line):
         """cp SOURCE DEST
@@ -940,7 +1175,7 @@ class Shell(cmd.Cmd):
         """
         args = self.line_to_args(line)
         if len(args) < 2:
-            self.print('Missing desintation file')
+            self.print_err('Missing desintation file')
             return
         dst_dirname = resolve_path(args[-1])
         dst_mode = auto(get_mode, dst_dirname)
@@ -948,15 +1183,15 @@ class Shell(cmd.Cmd):
             src_filename = resolve_path(src_filename)
             src_mode = auto(get_mode, src_filename)
             if not mode_exists(src_mode):
-                self.print("File '{}' doesn't exist".format(src_filename))
+                self.print_err("File '{}' doesn't exist".format(src_filename))
                 return False
             if mode_isdir(dst_mode):
                 dst_filename = dst_dirname + '/' + os.path.basename(src_filename)
             else:
                 dst_filename = dst_dirname
             if not cp(src_filename, dst_filename):
-                self.print("Unable to copy '%s' to '%s'" %
-                           (src_filename, dst_filename))
+                self.print_err("Unable to copy '%s' to '%s'" %
+                               (src_filename, dst_filename))
                 break
 
     def do_echo(self, line):
@@ -974,7 +1209,7 @@ class Shell(cmd.Cmd):
            testing.
         """
         filename = resolve_path(line)
-        print(auto(get_filesize, filename))
+        self.print(auto(get_filesize, filename))
 
     def do_filetype(self, line):
         """filetype FILE
@@ -983,7 +1218,7 @@ class Shell(cmd.Cmd):
            for testing.
         """
         if len(line) == 0:
-            self.print("Must provide a filename")
+            self.print_err("Must provide a filename")
             return
         filename = resolve_path(line)
         mode = auto(get_mode, filename)
@@ -1058,8 +1293,8 @@ class Shell(cmd.Cmd):
             stat = auto(get_stat, filename)
             mode = stat_mode(stat)
             if not mode_exists(mode):
-                self.print("Cannot access '%s': No such file or directory" % 
-                           filename)
+                self.print_err("Cannot access '%s': No such file or directory" %
+                               filename)
                 continue
             if not mode_isdir(mode):
                 if args.long:
@@ -1091,19 +1326,19 @@ class Shell(cmd.Cmd):
         for filename in args:
             filename = resolve_path(filename)
             if not mkdir(filename):
-                self.print('Unable to create %s' % filename)
+                self.print_err('Unable to create %s' % filename)
 
-    def repl_serial_to_stdout(self):
+    def repl_serial_to_stdout(self, dev):
         """Runs as a thread which has a sole purpose of readding bytes from
            the seril port and writing them to stdout. Used by do_repl.
         """
-        save_timeout = pyb.serial.timeout
+        save_timeout = dev.pyb.serial.timeout
         # Set a timeout so that the read returns periodically with no data
         # and allows us to check whether the main thread wants us to quit.
-        pyb.serial.timeout = 1
+        dev.pyb.serial.timeout = 1
         while not self.quit_serial_reader:
             try:
-                ch = pyb.serial.read(1)
+                ch = dev.pyb.serial.read(1)
             except serial.serialutil.SerialException:
                 # This happens if the pyboard reboots, or a USB port
                 # goes away.
@@ -1122,10 +1357,10 @@ class Shell(cmd.Cmd):
                 continue
             self.stdout.write(ch)
             self.stdout.flush()
-        pyb.serial.timeout = save_timeout
+        dev.pyb.serial.timeout = save_timeout
 
     def do_repl(self, line):
-        """repl
+        """repl [board-name] [~ line [~]]
 
            Enters into the regular REPL with the MicroPython board.
            Use Control-X to exit REPL mode and return the shell. It may take
@@ -1134,21 +1369,35 @@ class Shell(cmd.Cmd):
            If you prvide a line to the repl command, then that will be executed.
            If you want the repl to exit, end the line with the ~ character.
         """
+        args = self.line_to_args(line)
+        if len(args) > 0 and line[0] != '~':
+            board_name = args[0]
+            line = ' '.join(args[1:])
+        else:
+            board_name = ''
+        dev = find_device_by_name(board_name)
+        if not dev:
+            self.print_err("Unable to find board '%s'" % board_name)
+            return
+
+        if line[0:2] == '~ ':
+            line = line[2:]
+
         self.print('Entering REPL. Use Control-%c to exit.' % QUIT_REPL_CHAR)
         import threading
         self.quit_serial_reader = False
         self.quit_when_no_output = False
-        t = threading.Thread(target=self.repl_serial_to_stdout)
+        t = threading.Thread(target=self.repl_serial_to_stdout, args=(dev,))
         t.daemon = True
         t.start()
         # Wake up the prompt
-        pyb.serial.write(b'\r')
+        dev.pyb.serial.write(b'\r')
         if line:
             if line[-1] == '~':
                 line = line[:-1]
                 self.quit_when_no_output = True
-            pyb.serial.write(bytes(line, encoding='utf-8'))
-            pyb.serial.write(b'\r')
+            dev.pyb.serial.write(bytes(line, encoding='utf-8'))
+            dev.pyb.serial.write(b'\r')
         if not self.quit_when_no_output:
             while True:
                 ch = getch()
@@ -1159,9 +1408,9 @@ class Shell(cmd.Cmd):
                     self.quit_serial_reader = True
                     break
                 if ch == b'\n':
-                    pyb.serial.write(b'\r')
+                    dev.pyb.serial.write(b'\r')
                 else:
-                    pyb.serial.write(ch)
+                    dev.pyb.serial.write(ch)
         t.join()
 
     argparse_rm = (
@@ -1196,7 +1445,7 @@ class Shell(cmd.Cmd):
             filename = resolve_path(filename)
             if not rm(filename, recursive=args.recursive, force=args.force):
                 if not args.force:
-                    self.print('Unable to remove', filename)
+                    self.print_err('Unable to remove', filename)
                 break
 
     argparse_sync = (
@@ -1343,81 +1592,7 @@ def main():
         PY_COLOR = ''
         END_COLOR = ''
 
-    global pyb
-    if args.wait and not os.path.exists(args.port):
-        sys.stdout.write("Waiting for '%s' to exist" % args.port)
-        sys.stdout.flush()
-        while not os.path.exists(args.port):
-            sys.stdout.write('.')
-            sys.stdout.flush()
-            time.sleep(0.5)
-        sys.stdout.write("\n")
-    pyb = pyboard.Pyboard(args.port, baudrate=args.baud)
-
-    # Bluetooth devices take some time to connect at startup, and writes
-    # issued while the remote isn't connected will fail. So we send newlines
-    # with pauses until one of our writes suceeds.
-    try:
-        # we send a Control-C which should kill the current line
-        # assuming we're talking to tha micropython repl. If we send
-        # a newline, then the junk might get interpreted as a command
-        # which will do who knows what.
-        pyb.serial.write(b'\x03')
-    except serial.serialutil.SerialException:
-        # Write failed. Now report that we're waiting and keep trying until
-        # a write succeeds
-        sys.stdout.write("Waiting for transport to be connected.")
-        while True:
-            time.sleep(0.5)
-            try:
-                pyb.serial.write(b'\x03')
-                break
-            except serial.serialutil.SerialException:
-                pass
-            sys.stdout.write('.')
-            sys.stdout.flush()
-        sys.stdout.write('\n')
-
-    # When connecting over wireless interface (like bluetooth), we often
-    # get a bunch of junk on the RX line when connecting, especially the first
-    # time after a powerup. So we drain that here. The junk can also originate
-    # from the newlines that we sent above.
-    save_timeout = pyb.serial.timeout
-    pyb.serial.timeout = 0.5
-    junk = pyb.serial.read(10)
-    if junk:
-        sys.stdout.write('Removing junk from the Rx serial line ')
-        timeout_count = 0
-        while timeout_count < 8: # We wait for 4 seconds with no data arriving
-            sys.stdout.write('.')
-            sys.stdout.flush()
-            junk = pyb.serial.read(10)
-            if junk:
-                timeout_count = 0
-            else:
-                timeout_count += 1
-        pyb.serial.write(b'\x03')
-        sys.stdout.write('\n')
-    pyb.serial.timeout = save_timeout
-
-    # In theory the serial port is now ready for use.
-
-    if remote_eval(test_buffer):
-        global HAS_BUFFER
-        HAS_BUFFER = True
-        if DEBUG:
-            print("Setting HAS_BUFFER to True")
-    elif not remote_eval(test_unhexlify):
-        print("rshell needs MicroPython firmware with ubinascii.unhexlify")
-        return
-    else:
-        if DEBUG:
-            print("MicroPython has unhexlify")
-
-    global pyb_root_dirs
-    pyb_root_dirs = ['/{}/'.format(dir) for dir in remote_eval(listdir, '/')]
-
-    sync_time()
+    connect_serial(args.port, args.baud, args.wait)
 
     if args.filename:
         with open(args.filename) as cmd_file:

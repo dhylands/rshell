@@ -108,6 +108,21 @@ def find_device_by_name(name):
             return dev
     return None
 
+def autoscan():
+    """If pyudev has been installed, then autoscan will try to automatically
+       locate and connect to MicroPython boards.
+    """
+    try:
+        import pyudev
+    except:
+        return
+    context = pyudev.Context()
+    for device in context.list_devices(subsystem='tty'):
+        if 'ID_VENDOR' in device:
+            vendor = device['ID_VENDOR']
+            if vendor == 'MicroPython' or vendor == 'Micro_Python':
+                connect_serial(device.device_node)
+
 def align_cell(fmt, elem, width):
     """Returns an aligned element."""
     if fmt == "<":
@@ -749,10 +764,8 @@ def add_arg(*args, **kwargs):
     """Returns a list containing args and kwargs."""
     return (args, kwargs)
 
-def connect_serial(port, baud, wait=False):
-    if DEBUG:
-        print('connect serial %s %d' % (port, baud))
-
+def connect_serial(port, baud=115200, wait=False):
+    print('Connecting to %s ...' % port)
     try:
         dev = DeviceSerial(port, baud, wait)
     except ShellError as err:
@@ -1495,8 +1508,8 @@ def main():
     except:
         default_baud = 115200
     default_port = os.getenv('RSHELL_PORT')
-    if not default_port:
-        default_port = '/dev/ttyACM0'
+    #if not default_port:
+    #    default_port = '/dev/ttyACM0'
     global BUFFER_SIZE
     try:
         default_buffer_size = int(os.getenv('RSHELL_BUFFER_SIZE'))
@@ -1592,7 +1605,10 @@ def main():
         PY_COLOR = ''
         END_COLOR = ''
 
-    connect_serial(args.port, args.baud, args.wait)
+    if args.port:
+        connect_serial(args.port, args.baud, args.wait)
+    else:
+        autoscan()
 
     if args.filename:
         with open(args.filename) as cmd_file:

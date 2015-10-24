@@ -25,6 +25,7 @@ import shutil
 import sys
 import tempfile
 import time
+import threading
 
 MONTH = ('', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
@@ -38,30 +39,30 @@ MONTH = ('', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 # 7 Reverse
 # 8 Hidden
 
-LT_BLACK    = "\x1b[1;30m"
-LT_RED      = "\x1b[1;31m"
-LT_GREEN    = "\x1b[1;32m"
-LT_YELLOW   = "\x1b[1;33m"
-LT_BLUE     = "\x1b[1;34m"
-LT_MAGENTA  = "\x1b[1;35m"
-LT_CYAN     = "\x1b[1;36m"
-LT_WHITE    = "\x1b[1;37m"
+LT_BLACK = "\x1b[1;30m"
+LT_RED = "\x1b[1;31m"
+LT_GREEN = "\x1b[1;32m"
+LT_YELLOW = "\x1b[1;33m"
+LT_BLUE = "\x1b[1;34m"
+LT_MAGENTA = "\x1b[1;35m"
+LT_CYAN = "\x1b[1;36m"
+LT_WHITE = "\x1b[1;37m"
 
-DK_BLACK    = "\x1b[2;30m"
-DK_RED      = "\x1b[2;31m"
-DK_GREEN    = "\x1b[2;32m"
-DK_YELLOW   = "\x1b[2;33m"
-DK_BLUE     = "\x1b[2;34m"
-DK_MAGENTA  = "\x1b[2;35m"
-DK_CYAN     = "\x1b[2;36m"
-DK_WHITE    = "\x1b[2;37m"
+DK_BLACK = "\x1b[2;30m"
+DK_RED = "\x1b[2;31m"
+DK_GREEN = "\x1b[2;32m"
+DK_YELLOW = "\x1b[2;33m"
+DK_BLUE = "\x1b[2;34m"
+DK_MAGENTA = "\x1b[2;35m"
+DK_CYAN = "\x1b[2;36m"
+DK_WHITE = "\x1b[2;37m"
 
-NO_COLOR    = "\x1b[0m"
+NO_COLOR = "\x1b[0m"
 
-DIR_COLOR    = LT_CYAN
+DIR_COLOR = LT_CYAN
 PROMPT_COLOR = LT_GREEN
-PY_COLOR     = DK_GREEN
-END_COLOR    = NO_COLOR
+PY_COLOR = DK_GREEN
+END_COLOR = NO_COLOR
 
 cur_dir = ''
 
@@ -73,7 +74,7 @@ BUFFER_SIZE = 512
 SIX_MONTHS = 183 * 24 * 60 * 60
 
 QUIT_REPL_CHAR = 'X'
-QUIT_REPL_BYTE = bytes((ord(QUIT_REPL_CHAR) - ord('@'),)) # Control-X
+QUIT_REPL_BYTE = bytes((ord(QUIT_REPL_CHAR) - ord('@'),))  # Control-X
 
 # CPython uses Jan 1, 1970 as the epoch, where MicroPython uses Jan 1, 2000
 # as the epoch. TIME_OFFSET is the constant number of seconds needed to
@@ -86,27 +87,94 @@ TIME_OFFSET = calendar.timegm((2000, 1, 1, 0, 0, 0, 0, 0, 0))
 
 DEVS = []
 DEFAULT_DEV = None
+DEV_IDX = 1
+
+DEV_LOCK = threading.RLock()
 
 def add_device(dev):
     """Adds a device to the list of devices we know about."""
-    global DEVS
-    if find_device_by_name(dev.name):
-        # This name is taken - make it unique
-        dev.name += '-%d' % (len(DEVS) + 1)
-    dev.name_path = '/' + dev.name + '/'
-    DEVS.append(dev)
-    global DEFAULT_DEV
-    if DEFAULT_DEV is None:
-        DEFAULT_DEV = dev
+    global DEV_IDX, DEFAULT_DEV
+    with DEV_LOCK:
+        for idx in range(len(DEVS)):
+            test_dev = DEVS[idx]
+            if test_dev.dev_name_short == dev.dev_name_short:
+                # This device is already in our list. Delete the old one
+                if test_dev is DEFAULT_DEV:
+                    DEFAULT_DEV = None
+                del DEVS[idx]
+                break
+        if find_device_by_name(dev.name):
+            # This name is taken - make it unique
+            dev.name += '-%d' % DEV_IDX
+        dev.name_path = '/' + dev.name + '/'
+        DEVS.append(dev)
+        DEV_IDX += 1
+        if DEFAULT_DEV is None:
+            DEFAULT_DEV = dev
+
 
 def find_device_by_name(name):
     """Tries to find a board by board name."""
     if not name:
         return DEFAULT_DEV
-    for dev in DEVS:
-        if dev.name == name:
-            return dev
+    with DEV_LOCK:
+        for dev in DEVS:
+            if dev.name == name:
+                return dev
     return None
+
+
+def is_micropython_usb_device(usb_dev):
+    """Checks a USB device to see if it looks like a MicroPython device.
+    """
+    if 'ID_VENDOR' in usb_dev:
+        vendor = usb_dev['ID_VENDOR']
+        if vendor == 'MicroPython' or vendor == 'Micro_Python':
+            return True
+    return False
+
+
+def autoconnect():
+    """Sets up a thread to detect when USB devices are plugged and unplugged.
+       If the device looks like a MicroPython board, then it will automatically
+       connect to it.
+    """
+    try:
+        import pyudev
+    except ImportError:
+        return
+    context = pyudev.Context()
+    monitor = pyudev.Monitor.from_netlink(context)
+    connect_thread = threading.Thread(target=autoconnect_thread, args=(monitor,))
+    connect_thread.daemon = True
+    connect_thread.start()
+
+
+def autoconnect_thread(monitor):
+    """Thread which detects USB Serial devices conecting and disconnecting."""
+    monitor.start()
+    monitor.filter_by('tty')
+
+    epoll = select.epoll()
+    epoll.register(monitor.fileno(), select.POLLIN)
+
+    while True:
+        events = epoll.poll()
+        for fileno, _ in events:
+            if fileno == monitor.fileno():
+                usb_dev = monitor.poll()
+                if is_micropython_usb_device(usb_dev):
+                    if usb_dev.action == 'add':
+                        connect_serial(usb_dev.device_node)
+                    elif usb_dev.action == 'remove':
+                        print('')
+                        print("USB Serial device '%s' disconnected" % usb_dev.device_node)
+                        with DEV_LOCK:
+                            for dev in DEVS:
+                                if dev.dev_name_short == usb_dev.device_node:
+                                    dev.close()
+                                    break
+
 
 def autoscan():
     """If pyudev has been installed, then autoscan will try to automatically
@@ -114,14 +182,13 @@ def autoscan():
     """
     try:
         import pyudev
-    except:
+    except ImportError:
         return
     context = pyudev.Context()
     for device in context.list_devices(subsystem='tty'):
-        if 'ID_VENDOR' in device:
-            vendor = device['ID_VENDOR']
-            if vendor == 'MicroPython' or vendor == 'Micro_Python':
-                connect_serial(device.device_node)
+        if is_micropython_usb_device(device):
+            connect_serial(device.device_node)
+
 
 def align_cell(fmt, elem, width):
     """Returns an aligned element."""
@@ -196,12 +263,13 @@ def get_dev_and_path(filename):
         if DEFAULT_DEV.is_root_path(filename):
             return (DEFAULT_DEV, filename)
     test_filename = filename + '/'
-    for dev in DEVS:
-        if test_filename.startswith(dev.name_path):
-            dev_filename = filename[len(dev.name_path)-1:]
-            if dev_filename == '':
-                dev_filename = '/'
-            return (dev, dev_filename)
+    with DEV_LOCK:
+        for dev in DEVS:
+            if test_filename.startswith(dev.name_path):
+                dev_filename = filename[len(dev.name_path)-1:]
+                if dev_filename == '':
+                    dev_filename = '/'
+                return (dev, dev_filename)
     return (None, filename)
 
 
@@ -216,9 +284,9 @@ def remote_repr(i):
 def print_bytes(byte_str):
     """Prints a string or converts bytes to a string and then prints."""
     if isinstance(byte_str, str):
-        self.print(byte_str)
+        print(byte_str)
     else:
-        self.print(str(byte_str, encoding='utf8'))
+        print(str(byte_str, encoding='utf8'))
 
 
 def auto(func, filename, *args, **kwargs):
@@ -230,13 +298,16 @@ def auto(func, filename, *args, **kwargs):
         return func(dev_filename, *args, **kwargs)
     return dev.remote_eval(func, dev_filename, *args, **kwargs)
 
+
 def board_name():
+    """Returns the boards name (if available)."""
     try:
         import board
         name = board.name
-    except:
+    except ImportError:
         name = 'pyboard'
     return repr(name)
+
 
 def cat(src_filename, dst_file):
     """Copies the contents of the indicated file to an already opened file."""
@@ -303,9 +374,9 @@ def cp(src_filename, dst_filename):
     return False
 
 
-def eval_str(str):
+def eval_str(string):
     """Executes a string containing python code."""
-    output = eval(str)
+    output = eval(string)
     return output
 
 
@@ -338,6 +409,7 @@ def get_stat(filename):
        doesn't exist.
     """
     import os
+
     def stat(filename):
         rstat = os.stat(filename)
         if IS_UPY:
@@ -363,6 +435,7 @@ def listdir_stat(dirname):
        returned by calling os.stat on the filename.
     """
     import os
+
     def stat(filename):
         rstat = os.stat(filename)
         if IS_UPY:
@@ -388,6 +461,7 @@ def make_directory(dirname):
 
 
 def mkdir(filename):
+    """Creates a directory."""
     return auto(make_directory, filename)
 
 
@@ -413,10 +487,12 @@ def remove_file(filename, recursive=False, force=False):
 
 
 def rm(filename, recursive=False, force=False):
+    """Removes a file or directory tree."""
     return auto(remove_file, filename, recursive, force)
 
 
 def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
+    """Synchronizes 2 directory trees."""
     src_files = sorted(auto(listdir_stat, src_dir), key=lambda entry: entry[0])
     dst_files = sorted(auto(listdir_stat, dst_dir), key=lambda entry: entry[0])
     for src_basename, src_stat in src_files:
@@ -433,7 +509,7 @@ def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
                 if mode_isdir(dst_mode):
                     # src and dst re both directories - recurse
                     sync(src_filename, dst_filename,
-                         mirror=mirror, dry_run=dry_run, stdout=stdout)
+                         mirror=mirror, dry_run=dry_run, stdout=sys.stdout)
                 else:
                     if print_func:
                         print_func("Source '%s' is a directory and "
@@ -442,9 +518,9 @@ def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
             else:
                 if mode_isdir(dst_mode):
                     if print_func:
-                        printf_func("Source '%s' is a file and "
-                                    "destination '%s' is a directory. Ignoring"
-                                    % (src_filename, dst_filename))
+                        print_func("Source '%s' is a file and "
+                                   "destination '%s' is a directory. Ignoring"
+                                   % (src_filename, dst_filename))
                 else:
                     if stat_mtime(src_stat) > stat_mtime(dst_stat):
                         if print_func:
@@ -464,10 +540,10 @@ def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
             dst_basename, dst_stat = dst_files[0]
 
 
-def set_time(time):
+def set_time(rtc_time):
     import pyb
     rtc = pyb.RTC()
-    rtc.datetime(time)
+    rtc.datetime(rtc_time)
 
 
 # 0x0D's sent from the host get transformed into 0x0A's, and 0x0A sent to the
@@ -490,14 +566,14 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
         with open(dst_filename, dst_mode) as dst_file:
             bytes_remaining = filesize
             if not HAS_BUFFER:
-                bytes_remaining *= 2 # hexlify makes each byte into 2
+                bytes_remaining *= 2  # hexlify makes each byte into 2
             buf_size = BUFFER_SIZE
             write_buf = bytearray(buf_size)
             read_buf = bytearray(buf_size)
             while bytes_remaining > 0:
                 read_size = min(bytes_remaining, buf_size)
                 buf_remaining = read_size
-                buf_index = 0;
+                buf_index = 0
                 while buf_remaining > 0:
                     if HAS_BUFFER:
                         bytes_read = sys.stdin.buffer.readinto(read_buf, bytes_remaining)
@@ -529,21 +605,21 @@ def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
             buf_size = BUFFER_SIZE
         else:
             buf_size = BUFFER_SIZE // 2
-        read_size = min(bytes_remaining,  buf_size)
+        read_size = min(bytes_remaining, buf_size)
         buf = src_file.read(read_size)
         #sys.stdout.write('\r%d/%d' % (filesize - bytes_remaining, filesize))
         #sys.stdout.flush()
         if HAS_BUFFER:
-            dev.pyb.serial.write(buf)
+            dev.write(buf)
         else:
-            dev.pyb.serial.write(binascii.hexlify(buf))
+            dev.write(binascii.hexlify(buf))
         # Wait for ack so we don't get too far ahead of the remote
         while True:
-            ch = dev.pyb.serial.read(1)
-            if ch == b'\x06':
+            char = dev.read(1)
+            if char == b'\x06':
                 break
             # This should only happen if an error occurs
-            sys.stdout.write(chr(ord(ch)))
+            sys.stdout.write(chr(ord(char)))
         bytes_remaining -= read_size
     #sys.stdout.write('\r')
 
@@ -554,7 +630,7 @@ def recv_file_from_remote(dev, src_filename, dst_file, filesize):
     """
     bytes_remaining = filesize
     if not HAS_BUFFER:
-        bytes_remaining *= 2 # hexlify makes each byte into 2
+        bytes_remaining *= 2  # hexlify makes each byte into 2
     buf_size = BUFFER_SIZE
     write_buf = bytearray(buf_size)
     while bytes_remaining > 0:
@@ -562,7 +638,7 @@ def recv_file_from_remote(dev, src_filename, dst_file, filesize):
         buf_remaining = read_size
         buf_index = 0
         while buf_remaining > 0:
-            read_buf = dev.pyb.serial.read(buf_remaining)
+            read_buf = dev.read(buf_remaining)
             bytes_read = len(read_buf)
             if bytes_read:
                 write_buf[buf_index:bytes_read] = read_buf[0:bytes_read]
@@ -573,7 +649,7 @@ def recv_file_from_remote(dev, src_filename, dst_file, filesize):
         else:
             dst_file.write(binascii.unhexlify(write_buf[0:read_size]))
         # Send an ack to the remote as a form of flow control
-        dev.pyb.serial.write(b'\x06')   # ASCII ACK is 0x06
+        dev.write(b'\x06')   # ASCII ACK is 0x06
         bytes_remaining -= read_size
 
 
@@ -598,12 +674,12 @@ def send_file_to_host(src_filename, dst_file, filesize):
                 bytes_remaining -= read_size
                 # Wait for an ack so we don't get ahead of the remote
                 while True:
-                    ch = sys.stdin.read(1)
-                    if ch:
-                        if ch == '\x06':
+                    char = sys.stdin.read(1)
+                    if char:
+                        if char == '\x06':
                             break
                         # This should only happen if an error occurs
-                        sys.stdout.write(ch)
+                        sys.stdout.write(char)
         return True
     except:
         return False
@@ -613,7 +689,7 @@ def test_buffer():
     """Checks the micropython firmware to see if sys.stdin.buffer exists."""
     import sys
     try:
-        x = sys.stdin.buffer
+        _ = sys.stdin.buffer
         return True
     except:
         return False
@@ -623,7 +699,7 @@ def test_readinto():
     """Checks the micropython firmware to see if sys.stdin.readinto exists."""
     import sys
     try:
-        x = sys.stdin.readinto
+        _ = sys.stdin.readinto
         return True
     except:
         return False
@@ -633,7 +709,7 @@ def test_unhexlify():
     """Checks the micropython firmware to see if ubinascii.unhexlify exists."""
     import ubinascii
     try:
-        func = ubinascii.unhexlify
+        _ = ubinascii.unhexlify
         return True
     except:
         return False
@@ -672,6 +748,7 @@ def word_len(word):
         return len(word) - 11   # 7 for color, 4 for no-color
     return len(word)
 
+
 def print_cols(words, print_func, termwidth=79):
     """Takes a single column of words, and prints it as multiple columns that
     will fit in termwidth columns.
@@ -708,6 +785,7 @@ def is_hidden(filename):
     """Determines if the file should be considered to be a "hidden" file."""
     return filename[0] == '.' or filename[-1] == '~'
 
+
 def is_visible(filename):
     """Just a helper to hide the double negative."""
     return not is_hidden(filename)
@@ -721,12 +799,12 @@ def print_long(filename, stat, print_func):
     curr_time = time.time()
     if mtime > curr_time or mtime < (curr_time - SIX_MONTHS):
         print_func('%6d %s %2d %04d  %s' % (size, MONTH[file_mtime[1]],
-                   file_mtime[2], file_mtime[0],
-                   decorated_filename(filename, stat)))
+                                            file_mtime[2], file_mtime[0],
+                                            decorated_filename(filename, stat)))
     else:
         print_func('%6d %s %2d %02d:%02d %s' % (size, MONTH[file_mtime[1]],
-                   file_mtime[2], file_mtime[3], file_mtime[4],
-                   decorated_filename(filename, stat)))
+                                                file_mtime[2], file_mtime[3], file_mtime[4],
+                                                decorated_filename(filename, stat)))
 
 
 def trim(docstring):
@@ -764,6 +842,7 @@ def add_arg(*args, **kwargs):
     """Returns a list containing args and kwargs."""
     return (args, kwargs)
 
+
 def connect_serial(port, baud=115200, wait=False):
     print('Connecting to %s ...' % port)
     try:
@@ -791,11 +870,15 @@ class ByteWriter(object):
         self.stdout.flush()
 
 
+class DeviceError(Exception):
+    """Errors that we want to report to the user and keep running."""
+    pass
+
+
 class Device(object):
 
     def __init__(self):
-        # We assume that
-        self.has_buffer = False # needs to be set for remote_eval to work
+        self.has_buffer = False  # needs to be set for remote_eval to work
         self.has_buffer = self.remote_eval(test_buffer)
         if self.has_buffer:
             if DEBUG:
@@ -809,7 +892,13 @@ class Device(object):
         self.sync_time()
         self.name = self.remote_eval(board_name)
 
+    def check_pyb(self):
+        """Raises an error if the pyb object was closed."""
+        if self.pyb is None:
+            raise DeviceError('serial port %s closed' % self.dev_name_short)
+
     def is_root_path(self, filename):
+        """Determines if 'filename' corresponds to a directory on this device."""
         test_filename = filename + '/'
         for root_dir in self.root_dirs:
             if test_filename.startswith(root_dir):
@@ -821,7 +910,7 @@ class Device(object):
         global HAS_BUFFER
         HAS_BUFFER = self.has_buffer
         args_arr = [remote_repr(i) for i in args]
-        kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k,v in kwargs.items()]
+        kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k, v in kwargs.items()]
         func_str = inspect.getsource(func)
         func_str += 'output = ' + func.__name__ + '('
         func_str += ', '.join(args_arr + kwargs_arr)
@@ -836,11 +925,15 @@ class Device(object):
             print('----- About to send %d bytes of code to the pyboard -----' % len(func_str))
             print(func_str)
             print('-----')
+        self.check_pyb()
         self.pyb.enter_raw_repl()
+        self.check_pyb()
         output = self.pyb.exec_raw_no_follow(func_str)
         if xfer_func:
             xfer_func(self, *args, **kwargs)
-        output, err = self.pyb.follow(timeout=10)
+        self.check_pyb()
+        output, _ = self.pyb.follow(timeout=10)
+        self.check_pyb()
         self.pyb.exit_raw_repl()
         if DEBUG:
             print('-----Response-----')
@@ -905,6 +998,47 @@ class DeviceSerial(Device):
         # In theory the serial port is now ready to use
         Device.__init__(self)
 
+    def close(self):
+        """Closes the serial port."""
+        self.pyb.serial.close()
+        self.pyb = None
+
+    def read(self, num_bytes):
+        """Reads data from the pyboard over the serial port."""
+        self.check_pyb()
+        try:
+            return self.pyb.serial.read(num_bytes)
+        except serial.serialutil.SerialException:
+            # Write failed - assume that we got disconnected
+            self.close()
+            raise DeviceError('serial port %s closed' % self.dev_name_short)
+
+    def status(self):
+        """Returns a status string to indicate whether we're connected to
+           the pyboard or not.
+        """
+        if self.pyb is None:
+            return 'closed'
+        return 'connected'
+
+    def write(self, buf):
+        """Writes data to the pyboard over the serial port."""
+        self.check_pyb()
+        try:
+            return self.pyb.serial.write(buf)
+        except serial.serialutil.SerialException:
+            # Write failed - assume that we got disconnected
+            self.pyb.serial.close()
+            self.pyb = None
+            raise DeviceError('serial port %s closed' % self.dev_name_short)
+
+    def timeout(self, timeout=None):
+        """Sets the timeout associated with the serial port."""
+        self.check_pyb()
+        if timeout is None:
+            return self.pyb.serial.timeout
+        self.pyb.serial.timeout = timeout
+
 
 class ShellError(Exception):
     """Errors that we want to report to the user and keep running."""
@@ -927,8 +1061,16 @@ class Shell(cmd.Cmd):
 
         global cur_dir
         cur_dir = os.getcwd()
+        self.prev_dir = cur_dir
         self.set_prompt()
         self.columns = shutil.get_terminal_size().columns
+
+        self.redirect_dev = None
+        self.redirect_filename = ''
+        self.redirect_mode = ''
+
+        self.quit_when_no_output = False
+        self.quit_serial_reader = False
 
     def set_prompt(self):
         self.prompt = PROMPT_COLOR + cur_dir + END_COLOR + '> '
@@ -971,6 +1113,8 @@ class Shell(cmd.Cmd):
                 return result
             else:
                 return cmd.Cmd.onecmd(self, line)
+        except DeviceError as err:
+            self.print_err(err)
         except ShellError as err:
             self.print_err(err)
         except SystemExit:
@@ -1022,12 +1166,12 @@ class Shell(cmd.Cmd):
         """
         self.print(*args, end=end, file=self.stderr)
 
-    def create_argparser(self, cmd):
+    def create_argparser(self, command):
         try:
-            argparse_args = getattr(self, "argparse_" + cmd)
+            argparse_args = getattr(self, "argparse_" + command)
         except AttributeError:
             return None
-        doc_lines = getattr(self, "do_" + cmd).__doc__.expandtabs().splitlines()
+        doc_lines = getattr(self, "do_" + command).__doc__.expandtabs().splitlines()
         if '' in doc_lines:
             blank_idx = doc_lines.index('')
             usage = doc_lines[:blank_idx]
@@ -1036,11 +1180,11 @@ class Shell(cmd.Cmd):
             usage = doc_lines
             description = []
         parser = argparse.ArgumentParser(
-            prog=cmd,
+            prog=command,
             usage='\n'.join(usage),
             description='\n'.join(description)
         )
-        for args,kwargs in argparse_args:
+        for args, kwargs in argparse_args:
             parser.add_argument(*args, **kwargs)
         return parser
 
@@ -1082,8 +1226,8 @@ class Shell(cmd.Cmd):
 
             del args[redirect_index + 1]
             del args[redirect_index]
-        cmd, arg, line = self.parseline(self.lastcmd)
-        parser = self.create_argparser(cmd)
+        curr_cmd, _, _ = self.parseline(self.lastcmd)
+        parser = self.create_argparser(curr_cmd)
         if parser:
             args = parser.parse_args(args)
         return args
@@ -1098,15 +1242,19 @@ class Shell(cmd.Cmd):
         for idx in range(len(args)):
             self.print("arg[%d] = '%s'" % (idx, args[idx]))
 
-    def do_boards(self, line):
+    def do_boards(self, _):
         """boards
 
            Lists the boards that rshell is currently connected to.
         """
         rows = []
-        for dev in DEVS:
-            rows.append((dev.name, '@ %s' % dev.dev_name_short))
-        column_print('< ', rows, self.print)
+        with DEV_LOCK:
+            for dev in DEVS:
+                rows.append((dev.name, '@ %s' % dev.dev_name_short, dev.status()))
+        if rows:
+            column_print('<< ', rows, self.print)
+        else:
+            print('No boards connected')
 
     def do_cat(self, line):
         """cat FILENAME...
@@ -1172,7 +1320,7 @@ class Shell(cmd.Cmd):
             else:
                 try:
                     baud = int(args[2])
-                except:
+                except ValueError:
                     self.print_err("Expecting baud to be numeric. Found '%s'" % args[3])
             connect_serial(port, baud)
         else:
@@ -1255,7 +1403,7 @@ class Shell(cmd.Cmd):
         # from the docstrings. The builtin help function doesn't do that.
         if not line:
             cmd.Cmd.do_help(self, line)
-            self.print("Use Control-D to exit rshell.");
+            self.print("Use Control-D to exit rshell.")
             return
         parser = self.create_argparser(line)
         if parser:
@@ -1269,7 +1417,6 @@ class Shell(cmd.Cmd):
         except AttributeError:
             pass
         self.print(str(self.nohelp % (line,)))
-
 
     argparse_ls = (
         add_arg(
@@ -1293,6 +1440,7 @@ class Shell(cmd.Cmd):
             help='Files or directories to list'
         ),
     )
+
     def do_ls(self, line):
         """ls [-a] [-l] FILE...
 
@@ -1301,8 +1449,8 @@ class Shell(cmd.Cmd):
         args = self.line_to_args(line)
         if len(args.filenames) == 0:
             args.filenames = ['.']
-        for filename in args.filenames:
-            filename = resolve_path(filename)
+        for idx in range(len(args.filenames)):
+            filename = resolve_path(args.filenames[idx])
             stat = auto(get_stat, filename)
             mode = stat_mode(stat)
             if not mode_exists(mode):
@@ -1345,32 +1493,36 @@ class Shell(cmd.Cmd):
         """Runs as a thread which has a sole purpose of readding bytes from
            the seril port and writing them to stdout. Used by do_repl.
         """
-        save_timeout = dev.pyb.serial.timeout
-        # Set a timeout so that the read returns periodically with no data
-        # and allows us to check whether the main thread wants us to quit.
-        dev.pyb.serial.timeout = 1
-        while not self.quit_serial_reader:
-            try:
-                ch = dev.pyb.serial.read(1)
-            except serial.serialutil.SerialException:
-                # This happens if the pyboard reboots, or a USB port
-                # goes away.
-                return
-            except TypeError:
-                # These is a bug in serialposix.py starting with python 3.3
-                # which causes a TypeError during the handling of the
-                # select.error. So we treat this the same as
-                # serial.serialutil.SerialException:
-                return
-            if not ch:
-                # This means that the read timed out. We'll check the quit
-                # flag and return if needed
-                if self.quit_when_no_output:
-                    break
-                continue
-            self.stdout.write(ch)
-            self.stdout.flush()
-        dev.pyb.serial.timeout = save_timeout
+        try:
+            save_timeout = dev.timeout()
+            # Set a timeout so that the read returns periodically with no data
+            # and allows us to check whether the main thread wants us to quit.
+            dev.timeout(1)
+            while not self.quit_serial_reader:
+                try:
+                    char = dev.read(1)
+                except serial.serialutil.SerialException:
+                    # This happens if the pyboard reboots, or a USB port
+                    # goes away.
+                    return
+                except TypeError:
+                    # These is a bug in serialposix.py starting with python 3.3
+                    # which causes a TypeError during the handling of the
+                    # select.error. So we treat this the same as
+                    # serial.serialutil.SerialException:
+                    return
+                if not char:
+                    # This means that the read timed out. We'll check the quit
+                    # flag and return if needed
+                    if self.quit_when_no_output:
+                        break
+                    continue
+                self.stdout.write(char)
+                self.stdout.flush()
+            dev.timeout(save_timeout)
+        except DeviceError:
+            # The device is no longer present.
+            return
 
     def do_repl(self, line):
         """repl [board-name] [~ line [~]]
@@ -1384,47 +1536,52 @@ class Shell(cmd.Cmd):
         """
         args = self.line_to_args(line)
         if len(args) > 0 and line[0] != '~':
-            board_name = args[0]
+            name = args[0]
             line = ' '.join(args[1:])
         else:
-            board_name = ''
-        dev = find_device_by_name(board_name)
+            name = ''
+        dev = find_device_by_name(name)
         if not dev:
-            self.print_err("Unable to find board '%s'" % board_name)
+            self.print_err("Unable to find board '%s'" % name)
             return
 
         if line[0:2] == '~ ':
             line = line[2:]
 
         self.print('Entering REPL. Use Control-%c to exit.' % QUIT_REPL_CHAR)
-        import threading
         self.quit_serial_reader = False
         self.quit_when_no_output = False
-        t = threading.Thread(target=self.repl_serial_to_stdout, args=(dev,))
-        t.daemon = True
-        t.start()
-        # Wake up the prompt
-        dev.pyb.serial.write(b'\r')
-        if line:
-            if line[-1] == '~':
-                line = line[:-1]
-                self.quit_when_no_output = True
-            dev.pyb.serial.write(bytes(line, encoding='utf-8'))
-            dev.pyb.serial.write(b'\r')
-        if not self.quit_when_no_output:
-            while True:
-                ch = getch()
-                if not ch:
-                    continue
-                if ch == QUIT_REPL_BYTE:
-                    self.print('');
-                    self.quit_serial_reader = True
-                    break
-                if ch == b'\n':
-                    dev.pyb.serial.write(b'\r')
-                else:
-                    dev.pyb.serial.write(ch)
-        t.join()
+        repl_thread = threading.Thread(target=self.repl_serial_to_stdout, args=(dev,))
+        repl_thread.daemon = True
+        repl_thread.start()
+        try:
+            # Wake up the prompt
+            dev.write(b'\r')
+            if line:
+                if line[-1] == '~':
+                    line = line[:-1]
+                    self.quit_when_no_output = True
+                dev.write(bytes(line, encoding='utf-8'))
+                dev.write(b'\r')
+            if not self.quit_when_no_output:
+                while True:
+                    char = getch()
+                    if not char:
+                        continue
+                    if char == QUIT_REPL_BYTE:
+                        self.print('')
+                        self.quit_serial_reader = True
+                        break
+                    if char == b'\n':
+                        dev.write(b'\r')
+                    else:
+                        dev.write(char)
+        except DeviceError as err:
+            # The device is no longer present.
+            self.print('')
+            self.stdout.flush()
+            self.print_err(err)
+        repl_thread.join()
 
     argparse_rm = (
         add_arg(
@@ -1448,6 +1605,7 @@ class Shell(cmd.Cmd):
             help='File to remove'
         ),
     )
+
     def do_rm(self, line):
         """rm [-r|--recursive][-f|--force] FILE...
 
@@ -1489,6 +1647,7 @@ class Shell(cmd.Cmd):
             help='Destination directory'
         ),
     )
+
     # Do_sync isn't fully implemented/tested yet, hence the leading underscore.
     def _do_sync(self, line):
         """sync [-m|--mirror] [-n|--dry-run] SRC_DIR DEST_DIR
@@ -1579,7 +1738,7 @@ def main():
     )
     parser.add_argument(
         "cmd",
-       nargs=argparse.REMAINDER,
+        nargs=argparse.REMAINDER,
         help="Optional command to execute"
     )
     args = parser.parse_args(sys.argv[1:])
@@ -1609,6 +1768,7 @@ def main():
         connect_serial(args.port, args.baud, args.wait)
     else:
         autoscan()
+        autoconnect()
 
     if args.filename:
         with open(args.filename) as cmd_file:
@@ -1623,4 +1783,3 @@ def main():
 
 
 main()
-

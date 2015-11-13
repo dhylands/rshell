@@ -26,6 +26,7 @@ import sys
 import tempfile
 import time
 import threading
+from serial.tools import list_ports
 
 MONTH = ('', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
@@ -124,13 +125,14 @@ def find_device_by_name(name):
     return None
 
 
-def is_micropython_usb_device(usb_dev):
+def is_micropython_usb_device(port):
     """Checks a USB device to see if it looks like a MicroPython device.
     """
-    if 'ID_VENDOR' in usb_dev:
-        vendor = usb_dev['ID_VENDOR']
-        if vendor == 'MicroPython' or vendor == 'Micro_Python':
-            return True
+    usb_id = port[2].lower()
+    # We don't check the last digit of the PID since there are 3 possible
+    # values.
+    if usb_id.startswith('usb vid:pid=f055:980'):
+        return True;
     return False
 
 
@@ -177,17 +179,12 @@ def autoconnect_thread(monitor):
 
 
 def autoscan():
-    """If pyudev has been installed, then autoscan will try to automatically
-       locate and connect to MicroPython boards.
+    """autoscan will check all of the serial ports to see if they have
+       a matching VID:PID for a MicroPython board. If it matches.
     """
-    try:
-        import pyudev
-    except ImportError:
-        return
-    context = pyudev.Context()
-    for device in context.list_devices(subsystem='tty'):
-        if is_micropython_usb_device(device):
-            connect_serial(device.device_node)
+    for port in serial.tools.list_ports.comports():
+        if is_micropython_usb_device(port):
+            connect_serial(port[0])
 
 
 def align_cell(fmt, elem, width):

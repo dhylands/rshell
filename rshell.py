@@ -22,6 +22,7 @@ import pyboard
 import select
 import serial
 import shutil
+import socket
 import sys
 import tempfile
 import time
@@ -552,13 +553,17 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
     """Function which runs on the pyboard. Matches up with send_file_to_remote."""
     import sys
     import ubinascii
-    import pyb
-    usb = pyb.USB_VCP()
-    if HAS_BUFFER and usb.isconnected():
-        # We don't want 0x03 bytes in the data to be interpreted as a Control-C
-        # This gets reset each time the REPL runs a line, so we don't need to
-        # worry about resetting it ourselves
-        usb.setinterrupt(-1)
+    try:
+        import pyb
+        usb = pyb.USB_VCP()
+        if HAS_BUFFER and usb.isconnected():
+            # We don't want 0x03 bytes in the data to be interpreted as a Control-C
+            # This gets reset each time the REPL runs a line, so we don't need to
+            # worry about resetting it ourselves
+            usb.setinterrupt(-1)
+    except ImportError:
+        # This means that there is no pyb module, which happens on the wipy
+        pass
     try:
         with open(dst_filename, dst_mode) as dst_file:
             bytes_remaining = filesize
@@ -840,7 +845,30 @@ def add_arg(*args, **kwargs):
     return (args, kwargs)
 
 
+def connect(port, baud=115200, user='micro', password='python', wait=False):
+    """Tries to connect automagically vie network or serial."""
+    try:
+        ip_address = socket.gethostbyname(port)
+        print('Connecting to ip', ip_address)
+        connect_net(port, ip_address, user=user, password=password)
+    except socket.gaierror:
+        # Doesn't look like a hostname or IP-address, assume its a serial port
+        print('connecting to serial', port)
+        connect_serial(port, baud=baud, wait=wait)
+
+
+def connect_net(name, ip_address, user='micro', password='python'):
+    """Connect to a MicroPython board via telnet."""
+    if name == ip_address:
+        print('Connecting to (%s) ...' % ip_address)
+    else:
+        print('Connecting to %s (%s) ...' % (name, ip_address))
+    dev = DeviceNet(name, ip_address, user, password)
+    add_device(dev)
+
+
 def connect_serial(port, baud=115200, wait=False):
+    """Connect to a MicroPython board via a serial port."""
     print('Connecting to %s ...' % port)
     try:
         dev = DeviceSerial(port, baud, wait)
@@ -874,7 +902,8 @@ class DeviceError(Exception):
 
 class Device(object):
 
-    def __init__(self):
+    def __init__(self, pyb):
+        self.pyb = pyb
         self.has_buffer = False  # needs to be set for remote_eval to work
         self.has_buffer = self.remote_eval(test_buffer)
         if self.has_buffer:
@@ -894,6 +923,11 @@ class Device(object):
         if self.pyb is None:
             raise DeviceError('serial port %s closed' % self.dev_name_short)
 
+    def close(self):
+        """Closes the serial port."""
+        self.pyb.serial.close()
+        self.pyb = None
+
     def is_root_path(self, filename):
         """Determines if 'filename' corresponds to a directory on this device."""
         test_filename = filename + '/'
@@ -901,6 +935,16 @@ class Device(object):
             if test_filename.startswith(root_dir):
                 return True
         return False
+
+    def read(self, num_bytes):
+        """Reads data from the pyboard over the serial port."""
+        self.check_pyb()
+        try:
+            return self.pyb.serial.read(num_bytes)
+        except serial.serialutil.SerialException:
+            # Write failed - assume that we got disconnected
+            self.close()
+            raise DeviceError('serial port %s closed' % self.dev_name_short)
 
     def remote(self, func, *args, xfer_func=None, **kwargs):
         """Calls func with the indicated args on the micropython board."""
@@ -944,11 +988,37 @@ class Device(object):
         """
         return eval(self.remote(func, *args, **kwargs))
 
+    def status(self):
+        """Returns a status string to indicate whether we're connected to
+           the pyboard or not.
+        """
+        if self.pyb is None:
+            return 'closed'
+        return 'connected'
+
     def sync_time(self):
         """Sets the time on the pyboard to match the time on the host."""
         now = time.localtime(time.time())
         self.remote(set_time, (now.tm_year, now.tm_mon, now.tm_mday, now.tm_wday + 1,
                                now.tm_hour, now.tm_min, now.tm_sec, 0))
+
+    def timeout(self, timeout=None):
+        """Sets the timeout associated with the serial port."""
+        self.check_pyb()
+        if timeout is None:
+            return self.pyb.serial.timeout
+        self.pyb.serial.timeout = timeout
+
+    def write(self, buf):
+        """Writes data to the pyboard over the serial port."""
+        self.check_pyb()
+        try:
+            return self.pyb.serial.write(buf)
+        except serial.serialutil.SerialException:
+            # Write failed - assume that we got disconnected
+            self.pyb.serial.close()
+            self.pyb = None
+            raise DeviceError('serial port %s closed' % self.dev_name_short)
 
 
 class DeviceSerial(Device):
@@ -966,7 +1036,7 @@ class DeviceSerial(Device):
         self.dev_name_short = port
         self.dev_name_long = '%s at %d baud' % (port, baud)
 
-        self.pyb = pyboard.Pyboard(port, baudrate=baud)
+        pyb = pyboard.Pyboard(port, baudrate=baud)
 
         # Bluetooth devices take some time to connect at startup, and writes
         # issued while the remote isn't connected will fail. So we send newlines
@@ -976,7 +1046,7 @@ class DeviceSerial(Device):
             # assuming we're talking to tha micropython repl. If we send
             # a newline, then the junk might get interpreted as a command
             # which will do who knows what.
-            self.pyb.serial.write(b'\x03')
+            pyb.serial.write(b'\x03')
         except serial.serialutil.SerialException:
             # Write failed. Now report that we're waiting and keep trying until
             # a write succeeds
@@ -984,7 +1054,7 @@ class DeviceSerial(Device):
             while True:
                 time.sleep(0.5)
                 try:
-                    self.pyb.serial.write(b'\x03')
+                    pyb.serial.write(b'\x03')
                     break
                 except serial.serialutil.SerialException:
                     pass
@@ -993,48 +1063,17 @@ class DeviceSerial(Device):
             sys.stdout.write('\n')
 
         # In theory the serial port is now ready to use
-        Device.__init__(self)
+        Device.__init__(self, pyb)
 
-    def close(self):
-        """Closes the serial port."""
-        self.pyb.serial.close()
-        self.pyb = None
 
-    def read(self, num_bytes):
-        """Reads data from the pyboard over the serial port."""
-        self.check_pyb()
-        try:
-            return self.pyb.serial.read(num_bytes)
-        except serial.serialutil.SerialException:
-            # Write failed - assume that we got disconnected
-            self.close()
-            raise DeviceError('serial port %s closed' % self.dev_name_short)
+class DeviceNet(Device):
 
-    def status(self):
-        """Returns a status string to indicate whether we're connected to
-           the pyboard or not.
-        """
-        if self.pyb is None:
-            return 'closed'
-        return 'connected'
+    def __init__(self, name, ip_address, user, password):
+        self.dev_name_short = name
+        self.dev_name_long = '%s @ %s' % (name, ip_address)
 
-    def write(self, buf):
-        """Writes data to the pyboard over the serial port."""
-        self.check_pyb()
-        try:
-            return self.pyb.serial.write(buf)
-        except serial.serialutil.SerialException:
-            # Write failed - assume that we got disconnected
-            self.pyb.serial.close()
-            self.pyb = None
-            raise DeviceError('serial port %s closed' % self.dev_name_short)
-
-    def timeout(self, timeout=None):
-        """Sets the timeout associated with the serial port."""
-        self.check_pyb()
-        if timeout is None:
-            return self.pyb.serial.timeout
-        self.pyb.serial.timeout = timeout
+        pyb = pyboard.Pyboard(ip_address, user=user, password=password)
+        Device.__init__(self, pyb)
 
 
 class ShellError(Exception):
@@ -1666,6 +1705,8 @@ def main():
     default_port = os.getenv('RSHELL_PORT')
     #if not default_port:
     #    default_port = '/dev/ttyACM0'
+    default_user = os.getenv('RSHELL_USER') or 'micro'
+    default_password = os.getenv('RSHELL_PASSWORD') or 'python'
     global BUFFER_SIZE
     try:
         default_buffer_size = int(os.getenv('RSHELL_BUFFER_SIZE'))
@@ -1699,6 +1740,18 @@ def main():
         dest="port",
         help="Set the serial port to use (default '%s')" % default_port,
         default=default_port
+    )
+    parser.add_argument(
+        "-u", "--user",
+        dest="user",
+        help="Set username to use (default '%s')" % default_user,
+        default=default_user
+    )
+    parser.add_argument(
+        "-w", "--password",
+        dest="password",
+        help="Set password to use (default '%s')" % default_password,
+        default=default_password
     )
     parser.add_argument(
         "-f", "--file",
@@ -1744,6 +1797,8 @@ def main():
         print("Debug = %s" % args.debug)
         print("Port = %s" % args.port)
         print("Baud = %d" % args.baud)
+        print("User = %s" % args.user)
+        print("Password = %s" % args.password)
         print("Wait = %d" % args.wait)
         print("Timing = %d" % args.timing)
         print("Buffer_size = %d" % args.buffer_size)
@@ -1762,7 +1817,7 @@ def main():
         END_COLOR = ''
 
     if args.port:
-        connect_serial(args.port, args.baud, args.wait)
+        connect(args.port, baud=args.baud, wait=args.wait, user=args.user, password=args.password)
     else:
         autoscan()
         autoconnect()

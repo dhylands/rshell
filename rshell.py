@@ -126,10 +126,21 @@ def find_device_by_name(name):
     return None
 
 
+def num_devices():
+    with DEV_LOCK:
+        return len(DEVS)
+
 def is_micropython_usb_device(port):
     """Checks a USB device to see if it looks like a MicroPython device.
     """
-    usb_id = port[2].lower()
+    if type(port).__name__ == 'tuple':
+        # Assume its a port from serial.tools.list_ports.comports()
+        usb_id = port[2].lower()
+    else:
+        # Assume its a pyudev.device.Device
+        if port['ID_BUS'] != 'usb' or port['SUBSYSTEM'] != 'tty':
+            return False
+        usb_id = 'usb vid:pid={}:{}'.format(port['ID_VENDOR_ID'], port['ID_MODEL_ID'])
     # We don't check the last digit of the PID since there are 3 possible
     # values.
     if usb_id.startswith('usb vid:pid=f055:980'):
@@ -297,13 +308,13 @@ def auto(func, filename, *args, **kwargs):
     return dev.remote_eval(func, dev_filename, *args, **kwargs)
 
 
-def board_name():
+def board_name(default):
     """Returns the boards name (if available)."""
     try:
         import board
         name = board.name
     except ImportError:
-        name = 'pyboard'
+        name = default
     return repr(name)
 
 
@@ -849,16 +860,21 @@ def connect(port, baud=115200, user='micro', password='python', wait=False):
     """Tries to connect automagically vie network or serial."""
     try:
         ip_address = socket.gethostbyname(port)
-        print('Connecting to ip', ip_address)
-        connect_net(port, ip_address, user=user, password=password)
+        #print('Connecting to ip', ip_address)
+        connect_telnet(port, ip_address, user=user, password=password)
     except socket.gaierror:
         # Doesn't look like a hostname or IP-address, assume its a serial port
-        print('connecting to serial', port)
+        #print('connecting to serial', port)
         connect_serial(port, baud=baud, wait=wait)
 
 
-def connect_net(name, ip_address, user='micro', password='python'):
+def connect_telnet(name, ip_address=None, user='micro', password='python'):
     """Connect to a MicroPython board via telnet."""
+    if ip_address is None:
+        try:
+            ip_address = socket.gethostbyname(name)
+        except socket.gaierror:
+            ip_address = name
     if name == ip_address:
         print('Connecting to (%s) ...' % ip_address)
     else:
@@ -916,7 +932,7 @@ class Device(object):
                 print("MicroPython has unhexlify")
         self.root_dirs = ['/{}/'.format(dir) for dir in self.remote_eval(listdir, '/')]
         self.sync_time()
-        self.name = self.remote_eval(board_name)
+        self.name = self.remote_eval(board_name, self.default_board_name())
 
     def check_pyb(self):
         """Raises an error if the pyb object was closed."""
@@ -1025,13 +1041,16 @@ class DeviceSerial(Device):
 
     def __init__(self, port, baud, wait):
         if wait and not os.path.exists(port):
-            sys.stdout.write("Waiting for '%s' to exist" % port)
-            sys.stdout.flush()
-            while not os.path.exists(port):
-                sys.stdout.write('.')
+            try:
+                sys.stdout.write("Waiting for serial port '%s' to exist" % port)
                 sys.stdout.flush()
-                time.sleep(0.5)
-            sys.stdout.write("\n")
+                while not os.path.exists(port):
+                    sys.stdout.write('.')
+                    sys.stdout.flush()
+                    time.sleep(0.5)
+                sys.stdout.write("\n")
+            except KeyboardInterrupt:
+                raise DeviceError('Interrupted')
 
         self.dev_name_short = port
         self.dev_name_long = '%s at %d baud' % (port, baud)
@@ -1065,15 +1084,26 @@ class DeviceSerial(Device):
         # In theory the serial port is now ready to use
         Device.__init__(self, pyb)
 
+    def default_board_name(self):
+        return 'pyboard'
+
 
 class DeviceNet(Device):
 
     def __init__(self, name, ip_address, user, password):
-        self.dev_name_short = name
-        self.dev_name_long = '%s @ %s' % (name, ip_address)
+        self.dev_name_short = '{} ({})'.format(name, ip_address)
+        self.dev_name_long = self.dev_name_short
 
-        pyb = pyboard.Pyboard(ip_address, user=user, password=password)
+        try:
+            pyb = pyboard.Pyboard(ip_address, user=user, password=password)
+        except (socket.timeout, OSError):
+            raise DeviceError('No response from {}'.format(ip_address))
+        except KeyboardInterrupt:
+            raise DeviceError('Interrupted')
         Device.__init__(self, pyb)
+
+    def default_board_name(self):
+        return 'wipy'
 
 
 class ShellError(Exception):
@@ -1338,6 +1368,7 @@ class Shell(cmd.Cmd):
     def do_connect(self, line):
         """connect TYPE TYPE_PARAMS
            connect serial port [baud]
+           connect telnet ip-address-or-name
 
            Connects a pyboard to rshell.
         """
@@ -1346,7 +1377,8 @@ class Shell(cmd.Cmd):
         if num_args < 1:
             self.print_err('Missing connection TYPE')
             return
-        if args[0] == 'serial':
+        connect_type = args[0]
+        if connect_type == 'serial':
             if num_args < 2:
                 self.print_err('Missing serial port')
                 return
@@ -1359,6 +1391,12 @@ class Shell(cmd.Cmd):
                 except ValueError:
                     self.print_err("Expecting baud to be numeric. Found '%s'" % args[3])
             connect_serial(port, baud)
+        elif connect_type == 'telnet':
+            if num_args < 2:
+                self.print_err('Missing hostname or ip-address')
+                return
+            name = args[1]
+            connect_telnet(name)
         else:
             self.print_err('Unrecognized connection TYPE: %s', args[1])
 
@@ -1817,7 +1855,10 @@ def main():
         END_COLOR = ''
 
     if args.port:
-        connect(args.port, baud=args.baud, wait=args.wait, user=args.user, password=args.password)
+        try:
+            connect(args.port, baud=args.baud, wait=args.wait, user=args.user, password=args.password)
+        except DeviceError as err:
+            print(err)
     else:
         autoscan()
         autoconnect()
@@ -1830,6 +1871,10 @@ def main():
         cmd_line = ' '.join(args.cmd)
         if cmd_line == '':
             print('Welcome to rshell. Use Control-D to exit.')
+        if num_devices() == 0:
+            print('')
+            print('No MicroPython boards connected - use the connect command to add one')
+            print('')
         shell = Shell(timing=args.timing)
         shell.cmdloop(cmd_line)
 

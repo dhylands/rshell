@@ -1018,13 +1018,6 @@ class Device(object):
         self.remote(set_time, (now.tm_year, now.tm_mon, now.tm_mday, now.tm_wday + 1,
                                now.tm_hour, now.tm_min, now.tm_sec, 0))
 
-    def timeout(self, timeout=None):
-        """Sets the timeout associated with the serial port."""
-        self.check_pyb()
-        if timeout is None:
-            return self.pyb.serial.timeout
-        self.pyb.serial.timeout = timeout
-
     def write(self, buf):
         """Writes data to the pyboard over the serial port."""
         self.check_pyb()
@@ -1087,6 +1080,13 @@ class DeviceSerial(Device):
     def default_board_name(self):
         return 'pyboard'
 
+    def timeout(self, timeout=None):
+        """Sets the timeout associated with the serial port."""
+        self.check_pyb()
+        if timeout is None:
+            return self.pyb.serial.timeout
+        self.pyb.serial.timeout = timeout
+
 
 class DeviceNet(Device):
 
@@ -1104,6 +1104,27 @@ class DeviceNet(Device):
 
     def default_board_name(self):
         return 'wipy'
+
+    def timeout(self, timeout=None):
+        """There is no equivalent to timeout for the telnet connection."""
+        return None
+
+class AutoBool(object):
+    """A simple class which allows a boolean to be set to False in conjunction
+       with a with: statement.
+    """
+
+    def __init__(self):
+        self.value = False
+
+    def __enter__(self):
+        self.value = True
+
+    def __exit__(self, type, value, traceback):
+        self.value = False
+
+    def __call__(self):
+        return self.value
 
 
 class ShellError(Exception):
@@ -1567,36 +1588,37 @@ class Shell(cmd.Cmd):
         """Runs as a thread which has a sole purpose of readding bytes from
            the seril port and writing them to stdout. Used by do_repl.
         """
-        try:
-            save_timeout = dev.timeout()
-            # Set a timeout so that the read returns periodically with no data
-            # and allows us to check whether the main thread wants us to quit.
-            dev.timeout(1)
-            while not self.quit_serial_reader:
-                try:
-                    char = dev.read(1)
-                except serial.serialutil.SerialException:
-                    # This happens if the pyboard reboots, or a USB port
-                    # goes away.
-                    return
-                except TypeError:
-                    # These is a bug in serialposix.py starting with python 3.3
-                    # which causes a TypeError during the handling of the
-                    # select.error. So we treat this the same as
-                    # serial.serialutil.SerialException:
-                    return
-                if not char:
-                    # This means that the read timed out. We'll check the quit
-                    # flag and return if needed
-                    if self.quit_when_no_output:
-                        break
-                    continue
-                self.stdout.write(char)
-                self.stdout.flush()
-            dev.timeout(save_timeout)
-        except DeviceError:
-            # The device is no longer present.
-            return
+        with self.serial_reader_running:
+            try:
+                save_timeout = dev.timeout()
+                # Set a timeout so that the read returns periodically with no data
+                # and allows us to check whether the main thread wants us to quit.
+                dev.timeout(1)
+                while not self.quit_serial_reader:
+                    try:
+                        char = dev.read(1)
+                    except serial.serialutil.SerialException:
+                        # This happens if the pyboard reboots, or a USB port
+                        # goes away.
+                        return
+                    except TypeError:
+                        # These is a bug in serialposix.py starting with python 3.3
+                        # which causes a TypeError during the handling of the
+                        # select.error. So we treat this the same as
+                        # serial.serialutil.SerialException:
+                        return
+                    if not char:
+                        # This means that the read timed out. We'll check the quit
+                        # flag and return if needed
+                        if self.quit_when_no_output:
+                            break
+                        continue
+                    self.stdout.write(char)
+                    self.stdout.flush()
+                dev.timeout(save_timeout)
+            except DeviceError:
+                # The device is no longer present.
+                return
 
     def do_repl(self, line):
         """repl [board-name] [~ line [~]]
@@ -1625,9 +1647,13 @@ class Shell(cmd.Cmd):
         self.print('Entering REPL. Use Control-%c to exit.' % QUIT_REPL_CHAR)
         self.quit_serial_reader = False
         self.quit_when_no_output = False
+        self.serial_reader_running = AutoBool()
         repl_thread = threading.Thread(target=self.repl_serial_to_stdout, args=(dev,))
         repl_thread.daemon = True
         repl_thread.start()
+        # Wait for reader to start
+        while not self.serial_reader_running():
+            pass
         try:
             # Wake up the prompt
             dev.write(b'\r')
@@ -1638,14 +1664,28 @@ class Shell(cmd.Cmd):
                 dev.write(bytes(line, encoding='utf-8'))
                 dev.write(b'\r')
             if not self.quit_when_no_output:
-                while True:
+                while self.serial_reader_running():
                     char = getch()
                     if not char:
                         continue
                     if char == QUIT_REPL_BYTE:
-                        self.print('')
                         self.quit_serial_reader = True
-                        break
+                        # When using telnet with the WiPy, it doesn't support
+                        # an initial timeout. So for the meantime, we send a
+                        # space which should cause the wipy to echo back a
+                        # space which will wakeup our reader thread so it will
+                        # notice the quit.
+                        dev.write(b' ')
+                        # Give the reader thread a chance to detect the quit
+                        # then we don't have to call getch() above again which
+                        # means we'd need to wait for another character.
+                        time.sleep(0.5)
+                        # Print a newline so that the rshell prompt looks good.
+                        self.print('')
+                        # We stay in the loop so that we can still enter
+                        # characters until we detect the reader thread quitting
+                        # (mostly to cover off weird states).
+                        continue
                     if char == b'\n':
                         dev.write(b'\r')
                     else:

@@ -429,7 +429,7 @@ def get_stat(filename):
     try:
         return stat(filename)
     except OSError:
-        return (0, 0, 0, 0, 0, 0, 0, 0)
+        return (0,) * 10
 
 
 def listdir(dirname):

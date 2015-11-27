@@ -173,7 +173,10 @@ def autoconnect_thread(monitor):
     epoll.register(monitor.fileno(), select.POLLIN)
 
     while True:
-        events = epoll.poll()
+        try:
+            events = epoll.poll()
+        except InterruptedError:
+            continue
         for fileno, _ in events:
             if fileno == monitor.fileno():
                 usb_dev = monitor.poll()
@@ -1458,12 +1461,52 @@ class Shell(cmd.Cmd):
         args = self.line_to_args(line)
         self.print(*args)
 
+    def do_edit(self, line):
+        """edit FILE
+
+           Copies the file locally, launches an editor to edit the file.
+           When the editor exits, if the file was modified then its copied
+           back.
+
+           You can specify the editor used with the --editor command line
+           option when you start rshell, or by using the VISUAL or EDITOR
+           environment variable. if none of those are set, then vi will be used.
+        """
+        if len(line) == 0:
+            self.print_err("Must provide a filename")
+            return
+        filename = resolve_path(line)
+        dev, dev_filename = get_dev_and_path(filename)
+        mode = auto(get_mode, filename)
+        if mode_exists(mode) and mode_isdir(mode):
+            self.print_err("Unable to edit directory '{}'".format(filename))
+            return
+        if dev is None:
+            # File is local
+            os.system("{} '{}'".format(EDITOR, filename))
+        else:
+            # File is remote
+            with tempfile.TemporaryDirectory() as temp_dir:
+                local_filename = os.path.join(temp_dir, os.path.basename(filename))
+                if mode_exists(mode):
+                    print('Retrieving {} ...'.format(filename))
+                    cp(filename, local_filename)
+                old_stat = get_stat(local_filename)
+                os.system("{} '{}'".format(EDITOR, local_filename))
+                new_stat = get_stat(local_filename)
+                if old_stat != new_stat:
+                    self.print('Updating {} ...'.format(filename))
+                    cp(local_filename, filename)
+
     def do_filesize(self, line):
         """filesize FILE
 
            Prints the size of the file, in bytes. This function is primarily
            testing.
         """
+        if len(line) == 0:
+            self.print_err("Must provide a filename")
+            return
         filename = resolve_path(line)
         self.print(auto(get_filesize, filename))
 
@@ -1733,6 +1776,17 @@ class Shell(cmd.Cmd):
                     self.print_err('Unable to remove', filename)
                 break
 
+    def do_shell(self, line):
+        """!some-shell-command args
+
+           Launches a shell and executes whatever command you provide. If you
+           don't provide any commands, then it will launch a bash sub-shell
+           and when exit from bash (Control-D) then it will return to rshell.
+        """
+        if not line:
+            line = '/bin/bash'
+        os.system(line)
+
     argparse_sync = (
         add_arg(
             '-m', '--mirror',
@@ -1761,7 +1815,6 @@ class Shell(cmd.Cmd):
             help='Destination directory'
         ),
     )
-
     # Do_sync isn't fully implemented/tested yet, hence the leading underscore.
     def _do_sync(self, line):
         """sync [-m|--mirror] [-n|--dry-run] SRC_DIR DEST_DIR
@@ -1785,6 +1838,7 @@ def main():
     #    default_port = '/dev/ttyACM0'
     default_user = os.getenv('RSHELL_USER') or 'micro'
     default_password = os.getenv('RSHELL_PASSWORD') or 'python'
+    default_editor = os.getenv('RSHELL_EDITOR') or os.getenv('VISUAL') or os.getenv('EDITOR') or 'vi'
     global BUFFER_SIZE
     try:
         default_buffer_size = int(os.getenv('RSHELL_BUFFER_SIZE'))
@@ -1830,6 +1884,12 @@ def main():
         dest="password",
         help="Set password to use (default '%s')" % default_password,
         default=default_password
+    )
+    parser.add_argument(
+        "-e", "--editor",
+        dest="editor",
+        help="Set the editor to use (default '%s')" % default_editor,
+        default=default_editor
     )
     parser.add_argument(
         "-f", "--file",
@@ -1884,6 +1944,9 @@ def main():
 
     global DEBUG
     DEBUG = args.debug
+
+    global EDITOR
+    EDITOR = args.editor
 
     BUFFER_SIZE = args.buffer_size
 

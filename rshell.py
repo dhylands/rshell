@@ -78,6 +78,9 @@ SIX_MONTHS = 183 * 24 * 60 * 60
 QUIT_REPL_CHAR = 'X'
 QUIT_REPL_BYTE = bytes((ord(QUIT_REPL_CHAR) - ord('@'),))  # Control-X
 
+# DELIMS is used by readline for determining word boundaries.
+DELIMS = ' \t\n>;'
+
 # CPython uses Jan 1, 1970 as the epoch, where MicroPython uses Jan 1, 2000
 # as the epoch. TIME_OFFSET is the constant number of seconds needed to
 # convert from one timebase to the other.
@@ -202,6 +205,29 @@ def autoscan():
             connect_serial(port[0])
 
 
+def escape(str):
+    """Precede all special characters with a backslash."""
+    out = ''
+    for char in str:
+        if char in '\\ ':
+            out += '\\'
+        out += char
+    return out
+
+
+def unescape(str):
+    """Undoes the effects of the escape() function."""
+    out = ''
+    prev_backslash = False
+    for char in str:
+        if not prev_backslash and char == '\\':
+            prev_backslash = True
+            continue
+        out += char
+        prev_backslash = False
+    return out
+
+
 def align_cell(fmt, elem, width):
     """Returns an aligned element."""
     if fmt == "<":
@@ -230,6 +256,20 @@ def column_print(fmt, rows, print_func):
         else:
             print_func(' '.join([align_cell(fmt[i], row[i], width[i])
                                  for i in range(num_cols)]))
+
+
+def find_macthing_files(match):
+    """Finds all of the files wihch match (used for completion)."""
+    last_slash = match.rfind('/')
+    if last_slash == -1:
+        dirname = '.'
+        match_prefix = match
+        result_prefix = ''
+    else:
+        dirname = match[0:last_slash]
+        match_prefix = match[last_slash + 1:]
+        result_prefix = dirname + '/'
+    return [result_prefix + filename for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
 
 
 def resolve_path(path):
@@ -332,6 +372,11 @@ def cat(src_filename, dst_file):
         filesize = dev.remote_eval(get_filesize, dev_filename)
         return dev.remote(send_file_to_host, dev_filename, dst_file, filesize,
                           xfer_func=recv_file_from_remote)
+
+def chdir(dirname):
+    """Changes the current working directory."""
+    import os
+    os.chdir(dirname)
 
 
 def copy_file(src_filename, dst_filename):
@@ -439,6 +484,33 @@ def listdir(dirname):
     """Returns a list of filenames contained in the named directory."""
     import os
     return os.listdir(dirname)
+
+
+def listdir_matches(match):
+    """Returns a list of filenames contained in the named directory.
+       Only filenames which start with `match` will be returned.
+       Directories will have a trailing slash.
+    """
+    import os
+    last_slash = match.rfind('/')
+    if last_slash == -1:
+        dirname = '.'
+        match_prefix = match
+        result_prefix = ''
+    else:
+        match_prefix = match[last_slash + 1:]
+        if last_slash == 0:
+            dirname = '/'
+            result_prefix = '/'
+        else:
+            dirname = match[0:last_slash]
+            result_prefix = dirname + '/'
+    def add_suffix_if_dir(filename):
+        if (os.stat(filename)[0] & 0x4000) != 0:
+            return filename + '/'
+        return filename
+    return [add_suffix_if_dir(result_prefix + filename)
+            for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
 
 
 def listdir_stat(dirname):
@@ -1278,6 +1350,24 @@ class Shell(cmd.Cmd):
             parser.add_argument(*args, **kwargs)
         return parser
 
+    def filename_complete(self, text, line, begidx, endidx):
+        """Figure out what filenames match the completion."""
+        for before_arg in range(begidx, 0, -1):
+            if line[before_arg] in DELIMS and before_arg >= 1 and line[before_arg - 1] != '\\':
+                break
+
+        fixed = unescape(line[before_arg+1:begidx])  # fixed portion of the arg
+        arg = unescape(line[before_arg+1:endidx])
+
+        completions = []
+        for path in sorted(auto(listdir_matches, arg)):
+            completions.append(escape(path.replace(fixed, "", 1)))
+        return completions
+
+    def directory_complete(self, text, line, begidx, endidx):
+        """Figure out what directories match the completion."""
+        return [filename for filename in self.filename_complete(text, line, begidx, endidx) if filename[-1] == '/']
+
     def line_to_args(self, line):
         """This will convert the line passed into the do_xxx functions into
         an array of arguments and handle the Output Redirection Operator.
@@ -1346,12 +1436,15 @@ class Shell(cmd.Cmd):
         else:
             print('No boards connected')
 
+    def complete_cat(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
+
     def do_cat(self, line):
         """cat FILENAME...
 
            Concatinates files and sends to stdout.
         """
-        # Note: when we get around to supporting cat from stdin, we'll need
+        # note: when we get around to supporting cat from stdin, we'll need
         #       to write stdin to a temp file, and then copy the file
         #       since we need to know the filesize when copying to the pyboard.
         args = self.line_to_args(line)
@@ -1365,6 +1458,9 @@ class Shell(cmd.Cmd):
                 self.print_err("'%s': is not a file" % filename)
                 continue
             cat(filename, self.stdout)
+
+    def complete_cd(self, text, line, begidx, endidx):
+        return self.directory_complete(text, line, begidx, endidx)
 
     def do_cd(self, line):
         """cd DIRECTORY
@@ -1381,11 +1477,13 @@ class Shell(cmd.Cmd):
             else:
                 dirname = args[0]
         dirname = resolve_path(dirname)
+
         mode = auto(get_mode, dirname)
         if mode_isdir(mode):
             global cur_dir
             self.prev_dir = cur_dir
             cur_dir = dirname
+            auto(chdir, dirname)
         else:
             self.print_err("Directory '%s' does not exist" % dirname)
 
@@ -1424,6 +1522,9 @@ class Shell(cmd.Cmd):
         else:
             self.print_err('Unrecognized connection TYPE: %s', args[1])
 
+    def complete_cp(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
+
     def do_cp(self, line):
         """cp SOURCE DEST
            cp SOURCE... DIRECTORY
@@ -1460,6 +1561,9 @@ class Shell(cmd.Cmd):
         """
         args = self.line_to_args(line)
         self.print(*args)
+
+    def complete_edit(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
 
     def do_edit(self, line):
         """edit FILE
@@ -1498,6 +1602,9 @@ class Shell(cmd.Cmd):
                     self.print('Updating {} ...'.format(filename))
                     cp(local_filename, filename)
 
+    def complete_filesize(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
+
     def do_filesize(self, line):
         """filesize FILE
 
@@ -1509,6 +1616,9 @@ class Shell(cmd.Cmd):
             return
         filename = resolve_path(line)
         self.print(auto(get_filesize, filename))
+
+    def complete_filesize(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
 
     def do_filetype(self, line):
         """filetype FILE
@@ -1579,6 +1689,9 @@ class Shell(cmd.Cmd):
         ),
     )
 
+    def complete_ls(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
+
     def do_ls(self, line):
         """ls [-a] [-l] FILE...
 
@@ -1615,6 +1728,9 @@ class Shell(cmd.Cmd):
                         files.append(decorated_filename(filename, stat))
             if len(files) > 0:
                 print_cols(sorted(files), self.print, self.columns)
+
+    def complete_mkdir(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
 
     def do_mkdir(self, line):
         """mkdir DIRECTORY...
@@ -1762,6 +1878,9 @@ class Shell(cmd.Cmd):
             help='File to remove'
         ),
     )
+
+    def complete_rm(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
 
     def do_rm(self, line):
         """rm [-r|--recursive][-f|--force] FILE...

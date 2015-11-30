@@ -29,6 +29,9 @@ import time
 import threading
 from serial.tools import list_ports
 
+import readline
+import traceback
+
 MONTH = ('', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
 
@@ -509,8 +512,9 @@ def listdir_matches(match):
         if (os.stat(filename)[0] & 0x4000) != 0:
             return filename + '/'
         return filename
-    return [add_suffix_if_dir(result_prefix + filename)
-            for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
+    matches = [add_suffix_if_dir(result_prefix + filename)
+               for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
+    return matches
 
 
 def listdir_stat(dirname):
@@ -1233,6 +1237,8 @@ class Shell(cmd.Cmd):
 
         self.quit_when_no_output = False
         self.quit_serial_reader = False
+        readline.set_completer_delims(DELIMS)
+
 
     def set_prompt(self):
         self.prompt = PROMPT_COLOR + cur_dir + END_COLOR + '> '
@@ -1351,17 +1357,83 @@ class Shell(cmd.Cmd):
         return parser
 
     def filename_complete(self, text, line, begidx, endidx):
+        """Wrapper for catching exceptions since cmd seems to silently
+           absorb them.
+        """
+        try:
+            return self.real_filename_complete(text, line, begidx, endidx)
+        except:
+            traceback.print_exc()
+
+    def real_filename_complete(self, text, line, begidx, endidx):
         """Figure out what filenames match the completion."""
-        for before_arg in range(begidx, 0, -1):
-            if line[before_arg] in DELIMS and before_arg >= 1 and line[before_arg - 1] != '\\':
+
+        # line contains the full command line that's been entered so far.
+        # text contains the portion of the line that readline is trying to complete
+        # text should correspond to line[begidx:endidx]
+        #
+        # The way the completer works text will start after one of the characters
+        # in DELIMS. So if the filename entered so far was "embedded\ sp" and
+        # then text will point to the s in sp.
+        #
+        # The following bit of logic backs up to find the real beginning of the
+        # filename.
+
+        for before_match in range(begidx, 0, -1):
+            if line[before_match] in DELIMS and before_match >= 1 and line[before_match - 1] != '\\':
                 break
 
-        fixed = unescape(line[before_arg+1:begidx])  # fixed portion of the arg
-        arg = unescape(line[before_arg+1:endidx])
+        # We set fixed to be the portion of the filename which is before text
+        # and match is the full portion of the filename that's been entered so
+        # far (that's that part we use for matching files).
+        #
+        # When we return a list of completions, the bit that we return should
+        # just be the portion that we replace 'text' with.
+
+        fixed = unescape(line[before_match+1:begidx]) # fixed portion of the match
+        match = unescape(line[before_match+1:endidx]) # portion to match filenames against
+
+        # We do the following to cover the case that the current directory
+        # is / and the path being entered is relative.
+        if match[0] == '/':
+            abs_match = match
+        elif cur_dir == '/':
+            abs_match = cur_dir + match
+        else:
+            abs_match = cur_dir + '/' + match
 
         completions = []
-        for path in sorted(auto(listdir_matches, arg)):
-            completions.append(escape(path.replace(fixed, "", 1)))
+        prepend = ''
+        if abs_match.rfind('/') == 0:  # match is in the root directory
+            # This means that we're looking for matches in the root directory
+            # (i.e. abs_match is /foo and the user hit TAB).
+            # So we'll supply the matching board names as possible completions.
+            # Since they're all treated as directories we leave the trailing slash.
+            with DEV_LOCK:
+                if match[0] == '/':
+                    completions += [dev.name_path for dev in DEVS if dev.name_path.startswith(abs_match)]
+                else:
+                    completions += [dev.name_path[1:] for dev in DEVS if dev.name_path.startswith(abs_match)]
+            if DEFAULT_DEV:
+                # Add root directories of the default device (i.e. /flash/ and /sd/)
+                if match[0] == '/':
+                    completions += [root_dir for root_dir in DEFAULT_DEV.root_dirs if root_dir.startswith(match)]
+                else:
+                    completions += [root_dir[1:] for root_dir in DEFAULT_DEV.root_dirs if root_dir[1:].startswith(match)]
+        else:
+            # This means that there are at least 2 slashes in abs_match. If one
+            # of them matches a board name then we need to remove the board
+            # name from fixed. Since the results from listdir_matches won't
+            # contain the board name, we need to prepend each of the completions.
+            with DEV_LOCK:
+                for dev in DEVS:
+                    if abs_match.startswith(dev.name_path):
+                        prepend = dev.name_path[:-1]
+
+        paths = sorted(auto(listdir_matches, match))
+        for path in paths:
+            path = prepend + path
+            completions.append(escape(path.replace(fixed, '', 1)))
         return completions
 
     def directory_complete(self, text, line, begidx, endidx):

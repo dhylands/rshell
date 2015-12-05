@@ -132,6 +132,15 @@ def find_device_by_name(name):
     return None
 
 
+def find_serial_device_by_port(port):
+    """Tries to find a board by port name."""
+    with DEV_LOCK:
+        for dev in DEVS:
+            if dev.is_serial_port(port):
+                return dev
+    return None
+
+
 def num_devices():
     with DEV_LOCK:
         return len(DEVS)
@@ -171,7 +180,7 @@ def autoconnect():
 
 
 def autoconnect_thread(monitor):
-    """Thread which detects USB Serial devices conecting and disconnecting."""
+    """Thread which detects USB Serial devices connecting and disconnecting."""
     monitor.start()
     monitor.filter_by('tty')
 
@@ -186,17 +195,19 @@ def autoconnect_thread(monitor):
         for fileno, _ in events:
             if fileno == monitor.fileno():
                 usb_dev = monitor.poll()
-                if is_micropython_usb_device(usb_dev):
-                    if usb_dev.action == 'add':
+                print('autoconnect: {} action: {}'.format(usb_dev.device_node, usb_dev.action))
+                dev = find_serial_device_by_port(usb_dev.device_node)
+                if usb_dev.action == 'add':
+                    if dev:
+                        connect_serial(dev.port, dev.baud, dev.wait)
+                    elif is_micropython_usb_device(usb_dev):
                         connect_serial(usb_dev.device_node)
-                    elif usb_dev.action == 'remove':
-                        print('')
-                        print("USB Serial device '%s' disconnected" % usb_dev.device_node)
-                        with DEV_LOCK:
-                            for dev in DEVS:
-                                if dev.dev_name_short == usb_dev.device_node:
-                                    dev.close()
-                                    break
+                elif usb_dev.action == 'remove':
+                    print('')
+                    print("USB Serial device '%s' disconnected" % usb_dev.device_node)
+                    if dev:
+                        dev.close()
+                        break
 
 
 def autoscan():
@@ -967,8 +978,8 @@ def connect_serial(port, baud=115200, wait=False):
     print('Connecting to %s ...' % port)
     try:
         dev = DeviceSerial(port, baud, wait)
-    except ShellError as err:
-        sys.stderr.write(err)
+    except DeviceError as err:
+        sys.stderr.write(str(err))
         sys.stderr.write('\n')
         return
     add_device(dev)
@@ -1029,6 +1040,9 @@ class Device(object):
         for root_dir in self.root_dirs:
             if test_filename.startswith(root_dir):
                 return True
+        return False
+
+    def is_serial_port(self, port):
         return False
 
     def read(self, num_bytes):
@@ -1102,16 +1116,20 @@ class Device(object):
         self.check_pyb()
         try:
             return self.pyb.serial.write(buf)
-        except serial.serialutil.SerialException:
+        except (serial.serialutil.SerialException, BrokenPipeError):
             # Write failed - assume that we got disconnected
             self.pyb.serial.close()
             self.pyb = None
-            raise DeviceError('serial port %s closed' % self.dev_name_short)
+            raise DeviceError('{} closed'.format(self.dev_name_short))
 
 
 class DeviceSerial(Device):
 
     def __init__(self, port, baud, wait):
+        self.port = port
+        self.baud = baud
+        self.wait = wait
+
         if wait and not os.path.exists(port):
             try:
                 sys.stdout.write("Waiting for serial port '%s' to exist" % port)
@@ -1127,7 +1145,10 @@ class DeviceSerial(Device):
         self.dev_name_short = port
         self.dev_name_long = '%s at %d baud' % (port, baud)
 
-        pyb = pyboard.Pyboard(port, baudrate=baud)
+        try:
+            pyb = pyboard.Pyboard(port, baudrate=baud)
+        except serial.serialutil.SerialException as err:
+            raise DeviceError(str(err))
 
         # Bluetooth devices take some time to connect at startup, and writes
         # issued while the remote isn't connected will fail. So we send newlines
@@ -1159,12 +1180,20 @@ class DeviceSerial(Device):
     def default_board_name(self):
         return 'pyboard'
 
+    def is_serial_port(self, port):
+        return self.dev_name_short == port
+
     def timeout(self, timeout=None):
         """Sets the timeout associated with the serial port."""
         self.check_pyb()
         if timeout is None:
             return self.pyb.serial.timeout
-        self.pyb.serial.timeout = timeout
+        try:
+            self.pyb.serial.timeout = timeout
+        except:
+            # timeout is a property so it calls code, and that can fail
+            # if the serial port is closed.
+            pass
 
 
 class DeviceNet(Device):
@@ -1583,7 +1612,8 @@ class Shell(cmd.Cmd):
                 try:
                     baud = int(args[2])
                 except ValueError:
-                    self.print_err("Expecting baud to be numeric. Found '%s'" % args[3])
+                    self.print_err("Expecting baud to be numeric. Found '{}'".format(args[2]))
+                    return
             connect_serial(port, baud)
         elif connect_type == 'telnet':
             if num_args < 2:
@@ -1592,7 +1622,7 @@ class Shell(cmd.Cmd):
             name = args[1]
             connect_telnet(name)
         else:
-            self.print_err('Unrecognized connection TYPE: %s', args[1])
+            self.print_err('Unrecognized connection TYPE: {}'.format(connect_type))
 
     def complete_cp(self, text, line, begidx, endidx):
         return self.filename_complete(text, line, begidx, endidx)
@@ -1837,6 +1867,9 @@ class Shell(cmd.Cmd):
                         # which causes a TypeError during the handling of the
                         # select.error. So we treat this the same as
                         # serial.serialutil.SerialException:
+                        return
+                    except ConnectionResetError:
+                        # This happens over a telnet seesion, if it resets
                         return
                     if not char:
                         # This means that the read timed out. We'll check the quit
@@ -2155,7 +2188,7 @@ def main():
             print(err)
     else:
         autoscan()
-        autoconnect()
+    autoconnect()
 
     if args.filename:
         with open(args.filename) as cmd_file:

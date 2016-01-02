@@ -174,7 +174,7 @@ def autoconnect():
         return
     context = pyudev.Context()
     monitor = pyudev.Monitor.from_netlink(context)
-    connect_thread = threading.Thread(target=autoconnect_thread, args=(monitor,))
+    connect_thread = threading.Thread(target=autoconnect_thread, args=(monitor,), name='AutoConnect')
     connect_thread.daemon = True
     connect_thread.start()
 
@@ -198,10 +198,16 @@ def autoconnect_thread(monitor):
                 print('autoconnect: {} action: {}'.format(usb_dev.device_node, usb_dev.action))
                 dev = find_serial_device_by_port(usb_dev.device_node)
                 if usb_dev.action == 'add':
-                    if dev:
-                        connect_serial(dev.port, dev.baud, dev.wait)
-                    elif is_micropython_usb_device(usb_dev):
-                        connect_serial(usb_dev.device_node)
+                    # Try connecting a few times. Sometimes the serial port
+                    # reports itself as busy, which causes the connection to fail.
+                    for i in range(8):
+                        if dev:
+                            connected = connect_serial(dev.port, dev.baud, dev.wait)
+                        elif is_micropython_usb_device(usb_dev):
+                            connected = connect_serial(usb_dev.device_node)
+                        if connected:
+                            break
+                        time.sleep(0.25)
                 elif usb_dev.action == 'remove':
                     print('')
                     print("USB Serial device '%s' disconnected" % usb_dev.device_node)
@@ -981,8 +987,9 @@ def connect_serial(port, baud=115200, wait=False):
     except DeviceError as err:
         sys.stderr.write(str(err))
         sys.stderr.write('\n')
-        return
+        return False
     add_device(dev)
+    return True
 
 
 class ByteWriter(object):
@@ -1031,7 +1038,8 @@ class Device(object):
 
     def close(self):
         """Closes the serial port."""
-        self.pyb.serial.close()
+        if self.pyb and self.pyb.serial:
+            self.pyb.serial.close()
         self.pyb = None
 
     def is_root_path(self, filename):
@@ -1050,7 +1058,7 @@ class Device(object):
         self.check_pyb()
         try:
             return self.pyb.serial.read(num_bytes)
-        except serial.serialutil.SerialException:
+        except (serial.serialutil.SerialException, TypeError):
             # Write failed - assume that we got disconnected
             self.close()
             raise DeviceError('serial port %s closed' % self.dev_name_short)
@@ -1065,7 +1073,9 @@ class Device(object):
         func_str += 'output = ' + func.__name__ + '('
         func_str += ', '.join(args_arr + kwargs_arr)
         func_str += ')\n'
-        func_str += 'if output is not None:\n'
+        func_str += 'if output is None:\n'
+        func_str += '    print("None")\n'
+        func_str += 'else:\n'
         func_str += '    print(output)\n'
         func_str = func_str.replace('TIME_OFFSET', '{}'.format(TIME_OFFSET))
         func_str = func_str.replace('HAS_BUFFER', '{}'.format(HAS_BUFFER))
@@ -1076,15 +1086,19 @@ class Device(object):
             print(func_str)
             print('-----')
         self.check_pyb()
-        self.pyb.enter_raw_repl()
-        self.check_pyb()
-        output = self.pyb.exec_raw_no_follow(func_str)
-        if xfer_func:
-            xfer_func(self, *args, **kwargs)
-        self.check_pyb()
-        output, _ = self.pyb.follow(timeout=10)
-        self.check_pyb()
-        self.pyb.exit_raw_repl()
+        try:
+            self.pyb.enter_raw_repl()
+            self.check_pyb()
+            output = self.pyb.exec_raw_no_follow(func_str)
+            if xfer_func:
+                xfer_func(self, *args, **kwargs)
+            self.check_pyb()
+            output, _ = self.pyb.follow(timeout=10)
+            self.check_pyb()
+            self.pyb.exit_raw_repl()
+        except (serial.serialutil.SerialException, TypeError):
+            self.close()
+            raise DeviceError('serial port %s closed' % self.dev_name_short)
         if DEBUG:
             print('-----Response-----')
             print(output)
@@ -1116,10 +1130,9 @@ class Device(object):
         self.check_pyb()
         try:
             return self.pyb.serial.write(buf)
-        except (serial.serialutil.SerialException, BrokenPipeError):
+        except (serial.serialutil.SerialException, BrokenPipeError, TypeError):
             # Write failed - assume that we got disconnected
-            self.pyb.serial.close()
-            self.pyb = None
+            self.close()
             raise DeviceError('{} closed'.format(self.dev_name_short))
 
 
@@ -1912,7 +1925,7 @@ class Shell(cmd.Cmd):
         self.quit_serial_reader = False
         self.quit_when_no_output = False
         self.serial_reader_running = AutoBool()
-        repl_thread = threading.Thread(target=self.repl_serial_to_stdout, args=(dev,))
+        repl_thread = threading.Thread(target=self.repl_serial_to_stdout, args=(dev,), name='REPL_serial_to_stdout')
         repl_thread.daemon = True
         repl_thread.start()
         # Wait for reader to start

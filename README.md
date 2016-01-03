@@ -116,6 +116,21 @@ raw REPL and the response received.
 By default, rshell uses ANSI color escape codes when displaying the prompt
 and ls output. This option allows colorized output to be disabled.
 
+# File System
+
+rshell can be connected to multiple pyboards simultaneously. If the board
+module exists on the pyboard (i.e. a file named board.py somewhere in the
+module search path) and it contains an attribute called name
+then the pyboard will use that name. If the board module can't be imported
+then the board will be named, pyboard or wipy. Names will have -1 (or some
+other number) to make the board name unique.
+
+You can access the internal flash on the first board connected using /flash
+and the sd card on the first board connected can be accessed using /sd.
+
+For all other connected pyboards, you can use /board-name/flash or
+/board-name/sd (you can see the board names using the boards command).
+
 # Commands
 
 ## args
@@ -124,6 +139,13 @@ args [arguments...]
 ```
 Debug function for verifying argument parsing. This function just
 prints out each argument that it receives.
+
+## boards
+```
+boards
+```
+Lists all of the boards that rshell is currently connected to, their names,
+and the connection.
 
 ## cat
 ```
@@ -137,6 +159,16 @@ cd DIRECTORY
 ```
 Changes the current directory. ~ expansion is supported, and cd -
 goes to the previous directory.
+
+## connect
+
+```
+connect TYPE TYPE_PARAMS
+connect serial port [baud]
+connect telnet ip-address-or-name
+```
+Connects a pyboard to rshell. rshell can be connected to multiple pyboards
+simultaneously.
 
 ## cp
 ```
@@ -152,6 +184,18 @@ the destination should be a directory.
 echo TEXT...
 ```
 Display a line of text.
+
+## edit
+```
+edit filename
+```
+If the file is on a pyboard, it copies the file to host, invokes an editor
+and if any changes were made to the file, it copies it back to the pyboard.
+
+The editor which is used defaults to vi, but can be overridem using either
+the --editor command line option when rshell.py is invoked, or by using
+the RSHELL_EDITOR, VISUAL or EDITOR environment variables (they are tried
+in the order listed).
 
 ## filesize
 ```

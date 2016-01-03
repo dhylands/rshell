@@ -240,14 +240,25 @@ Creates one or more directories.
 
 ## repl
 ```
-repl
+repl [board-name] [~ line][~]
 ```
 Enters into the regular REPL with the MicroPython board.
 Use Control-X to exit REPL mode and return the shell. It may take
 a second or two before the REPL exits.
 
-If you prvide a line to the repl command, then that will be executed.
+If you provide a board-name then rshell will connect to that board,
+otherwise it will connect to the default board (first connected board).
+
+If you provide a tilde followed by a space (~ ) then anything after the
+tilde will be entered as if you typed it on the command line.
+
 If you want the repl to exit, end the line with the ~ character.
+
+For example, you could use:
+```
+rshell.py repl ~ pyb.bootloader()~
+```
+and it will boot the pyboard into DFU.
 
 ## rm
 ```

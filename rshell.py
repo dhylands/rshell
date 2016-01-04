@@ -153,7 +153,8 @@ def is_micropython_usb_device(port):
         usb_id = port[2].lower()
     else:
         # Assume its a pyudev.device.Device
-        if port['ID_BUS'] != 'usb' or port['SUBSYSTEM'] != 'tty':
+        if ('ID_BUS' not in port or port['ID_BUS'] != 'usb' or
+            'SUBSYSTEM' not in port or port['SUBSYSTEM'] != 'tty'):
             return False
         usb_id = 'usb vid:pid={}:{}'.format(port['ID_VENDOR_ID'], port['ID_MODEL_ID'])
     # We don't check the last digit of the PID since there are 3 possible

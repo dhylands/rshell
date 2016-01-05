@@ -374,6 +374,8 @@ def auto(func, filename, *args, **kwargs):
     """
     dev, dev_filename = get_dev_and_path(filename)
     if dev is None:
+        if dev_filename[0] == '~':
+            dev_filename = os.path.expanduser(dev_filename)
         return func(dev_filename, *args, **kwargs)
     return dev.remote_eval(func, dev_filename, *args, **kwargs)
 

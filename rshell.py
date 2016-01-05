@@ -206,6 +206,8 @@ def autoconnect_thread(monitor):
                             connected = connect_serial(dev.port, dev.baud, dev.wait)
                         elif is_micropython_usb_device(usb_dev):
                             connected = connect_serial(usb_dev.device_node)
+                        else:
+                            connected = False
                         if connected:
                             break
                         time.sleep(0.25)
@@ -307,14 +309,18 @@ def resolve_path(path):
     comps = path.split('/')
     new_comps = []
     for comp in comps:
-        if comp == '.':
+        # We strip out xxx/./xxx and xxx//xxx, except that we want to keep the
+        # leading / for absolute paths. This also removes the trailing slash
+        # that autocompletion adds to a directory.
+        if comp == '.' or (comp == '' and len(new_comps) > 0):
             continue
-        if comp == '..' and len(new_comps) > 1:
-            new_comps.pop()
+        if comp == '..':
+            if len(new_comps) > 1:
+                new_comps.pop()
         else:
             new_comps.append(comp)
-    if len(new_comps) == 1:
-        return new_comps[0] + '/'
+    if len(new_comps) == 1 and new_comps[0] == '':
+        return '/'
     return '/'.join(new_comps)
 
 

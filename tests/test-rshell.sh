@@ -1,12 +1,15 @@
 #!/bin/bash
 
-#set -x
+# set -x
 
 LOCAL_DIR='./rshell-test'
 REMOTE_DIR='/flash/rshell-test'
 
-RSHELL="$(pwd)/rshell.py"
-MAKE_ALL_BYTES="$(pwd)/make_all_bytes.py"
+RSHELL_DIR=rshell
+TESTS_DIR=tests
+
+RSHELL="$(pwd)/${RSHELL_DIR}/rshell.py --quiet"
+MAKE_ALL_BYTES="$(pwd)/${TESTS_DIR}/make_all_bytes.py"
 
 cmp_results() {
     local file1=$1

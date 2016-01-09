@@ -11,14 +11,15 @@
 
 # from __future__ import print_function
 
+from rshell.getch import getch
+from rshell.pyboard import Pyboard
+
 import argparse
 import binascii
 import calendar
 import cmd
-from getch import getch
 import inspect
 import os
-import pyboard
 import select
 import serial
 import shutil
@@ -75,6 +76,7 @@ HAS_BUFFER = False
 IS_UPY = False
 DEBUG = False
 BUFFER_SIZE = 512
+QUIET = False
 
 SIX_MONTHS = 183 * 24 * 60 * 60
 
@@ -980,17 +982,19 @@ def connect_telnet(name, ip_address=None, user='micro', password='python'):
             ip_address = socket.gethostbyname(name)
         except socket.gaierror:
             ip_address = name
-    if name == ip_address:
-        print('Connecting to (%s) ...' % ip_address)
-    else:
-        print('Connecting to %s (%s) ...' % (name, ip_address))
+    if not QUIET:
+        if name == ip_address:
+            print('Connecting to (%s) ...' % ip_address)
+        else:
+            print('Connecting to %s (%s) ...' % (name, ip_address))
     dev = DeviceNet(name, ip_address, user, password)
     add_device(dev)
 
 
 def connect_serial(port, baud=115200, wait=False):
     """Connect to a MicroPython board via a serial port."""
-    print('Connecting to %s ...' % port)
+    if not QUIET:
+        print('Connecting to %s ...' % port)
     try:
         dev = DeviceSerial(port, baud, wait)
     except DeviceError as err:
@@ -1168,7 +1172,7 @@ class DeviceSerial(Device):
         self.dev_name_long = '%s at %d baud' % (port, baud)
 
         try:
-            pyb = pyboard.Pyboard(port, baudrate=baud)
+            pyb = Pyboard(port, baudrate=baud)
         except serial.serialutil.SerialException as err:
             raise DeviceError(str(err))
 
@@ -1225,7 +1229,7 @@ class DeviceNet(Device):
         self.dev_name_long = self.dev_name_short
 
         try:
-            pyb = pyboard.Pyboard(ip_address, user=user, password=password)
+            pyb = Pyboard(ip_address, user=user, password=password)
         except (socket.timeout, OSError):
             raise DeviceError('No response from {}'.format(ip_address))
         except KeyboardInterrupt:
@@ -1553,9 +1557,15 @@ class Shell(cmd.Cmd):
         rows = []
         with DEV_LOCK:
             for dev in DEVS:
-                rows.append((dev.name, '@ %s' % dev.dev_name_short, dev.status()))
+                if dev is DEFAULT_DEV:
+                    dirs = [dir[:-1] for dir in dev.root_dirs]
+                else:
+                    dirs = []
+                dirs += ['/{}{}'.format(dev.name, dir)[:-1] for dir in dev.root_dirs]
+                dirs = 'Dirs: ' + ' '.join(dirs)
+                rows.append((dev.name, '@ %s' % dev.dev_name_short, dev.status(), dirs))
         if rows:
-            column_print('<< ', rows, self.print)
+            column_print('<<< ', rows, self.print)
         else:
             print('No boards connected')
 
@@ -2171,6 +2181,13 @@ def main():
         default=False
     )
     parser.add_argument(
+        "--quiet",
+        dest="quiet",
+        action="store_true",
+        help="Turns off some output (useful for testing)",
+        default=False
+    )
+    parser.add_argument(
         "cmd",
         nargs=argparse.REMAINDER,
         help="Optional command to execute"
@@ -2185,11 +2202,15 @@ def main():
         print("Password = %s" % args.password)
         print("Wait = %d" % args.wait)
         print("Timing = %d" % args.timing)
+        print("Quiet = %d" % args.quiet)
         print("Buffer_size = %d" % args.buffer_size)
         print("Cmd = [%s]" % ', '.join(args.cmd))
 
     global DEBUG
     DEBUG = args.debug
+
+    global QUIET
+    QUIET = args.quiet
 
     global EDITOR
     EDITOR = args.editor
@@ -2227,5 +2248,5 @@ def main():
         shell = Shell(timing=args.timing)
         shell.cmdloop(cmd_line)
 
-
-main()
+if __name__ == "__main__":
+    main()

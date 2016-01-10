@@ -1,4 +1,4 @@
-rshell.py
+rshell
 =========
 
 Remote MicroPytyhon shell.

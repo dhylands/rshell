@@ -21,7 +21,7 @@
 import sys
 try:
     from rshell.getch import getch
-    from rshell.pyboard import Pyboard
+    from rshell.pyboard import Pyboard, PyboardError
     from rshell.version import __version__
 except ImportError as err:
     print('sys.path =', sys.path)
@@ -1020,7 +1020,7 @@ def add_arg(*args, **kwargs):
     return (args, kwargs)
 
 
-def connect(port, baud=115200, user='micro', password='python', wait=False):
+def connect(port, baud=115200, user='micro', password='python', wait=0):
     """Tries to connect automagically vie network or serial."""
     try:
         ip_address = socket.gethostbyname(port)
@@ -1048,7 +1048,7 @@ def connect_telnet(name, ip_address=None, user='micro', password='python'):
     add_device(dev)
 
 
-def connect_serial(port, baud=115200, wait=False):
+def connect_serial(port, baud=115200, wait=0):
     """Connect to a MicroPython board via a serial port."""
     if not QUIET:
         print('Connecting to %s ...' % port)
@@ -1225,13 +1225,16 @@ class DeviceSerial(Device):
         self.wait = wait
 
         if wait and not os.path.exists(port):
+            toggle = False
             try:
-                sys.stdout.write("Waiting for serial port '%s' to exist" % port)
+                sys.stdout.write("Waiting %d seconds for serial port '%s' to exist" % (wait, port))
                 sys.stdout.flush()
-                while not os.path.exists(port):
+                while wait and not os.path.exists(port):
                     sys.stdout.write('.')
                     sys.stdout.flush()
                     time.sleep(0.5)
+                    toggle = not toggle
+                    wait = wait if not toggle else wait -1
                 sys.stdout.write("\n")
             except KeyboardInterrupt:
                 raise DeviceError('Interrupted')
@@ -1240,9 +1243,10 @@ class DeviceSerial(Device):
         self.dev_name_long = '%s at %d baud' % (port, baud)
 
         try:
-            pyb = Pyboard(port, baudrate=baud)
-        except serial.serialutil.SerialException as err:
-            raise DeviceError(str(err))
+            pyb = Pyboard(port, baudrate=baud, wait=wait)
+        except PyboardError as err:
+            print(err)
+            sys.exit(1)
 
         # Bluetooth devices take some time to connect at startup, and writes
         # issued while the remote isn't connected will fail. So we send newlines
@@ -2249,11 +2253,12 @@ def real_main():
         default=False
     )
     parser.add_argument(
-        "--nowait",
+        "--wait",
         dest="wait",
-        action="store_false",
-        help="Don't wait for serial port",
-        default=True
+        type=int,
+        action="store",
+        help="Seconds to wait for serial port",
+        default=0
     )
     parser.add_argument(
         "--timing",

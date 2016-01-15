@@ -116,7 +116,7 @@ following displayed:
                             Specifies a file of commands to process.
       -d, --debug           Enable debug features
       -n, --nocolor         Turn off colorized output
-      --nowait              Don't wait for serial port
+      --wait                How long to wait for serial port
       --timing              Print timing information about each command
       --quiet               Turns off some output (useful for testing)
 

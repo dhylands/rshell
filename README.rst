@@ -42,6 +42,12 @@ You can install rshell using the command:
 If you use a virtualenv, then you don't need the sudo. rshell needs Python3.
 All of my testing was done using version 3.4.0.
 
+Debian/Ubuntu users can get pip3 using:
+
+::
+
+    sudo apt-get install python3-pip
+
 Sample Session
 ==============
 
@@ -110,7 +116,7 @@ following displayed:
                             Specifies a file of commands to process.
       -d, --debug           Enable debug features
       -n, --nocolor         Turn off colorized output
-      --nowait              Don't wait for serial port
+      --wait                How long to wait for serial port
       --timing              Print timing information about each command
       --quiet               Turns off some output (useful for testing)
 
@@ -160,12 +166,12 @@ By default, rshell uses ANSI color escape codes when displaying the
 prompt and ls output. This option allows colorized output to be
 disabled.
 
---nowait
---------
+--wait
+------
 
-If a port is specified, then rshell will wait for the serial port to exist
-before continuing. With the --nowait option, rshell will not wait for the
-serial port to exist.
+If a port is specified defines how long rshell will wait for the port to exist
+and for a connection to be established. The default is 0 seconds specifying an
+immediate return.
 
 -p PORT, --port PORT
 --------------------

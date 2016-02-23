@@ -11,8 +11,16 @@
 
 # from __future__ import print_function
 
+# To run rshell from the git repository, cd into the top level rshell directory
+# and run:
+#   python3 -m rhsell.main
+#
+# that sets things up so that the "from rshell.xxx" will import from the git
+# tree and not from some installed version.
+
 from rshell.getch import getch
 from rshell.pyboard import Pyboard
+from rshell.version import __version__
 
 import argparse
 import binascii
@@ -77,6 +85,11 @@ IS_UPY = False
 DEBUG = False
 BUFFER_SIZE = 512
 QUIET = False
+
+# It turns out that just because pyudev is installed doesn't mean that
+# it can actually be used. So we only bother to try is we're running
+# under linux.
+USE_AUTOCONNECT = sys.platform == 'linux'
 
 SIX_MONTHS = 183 * 24 * 60 * 60
 
@@ -171,6 +184,8 @@ def autoconnect():
        If the device looks like a MicroPython board, then it will automatically
        connect to it.
     """
+    if not USE_AUTOCONNECT:
+        return
     try:
         import pyudev
     except ImportError:
@@ -2181,6 +2196,13 @@ def main():
         default=False
     )
     parser.add_argument(
+        '-V', '--version',
+        dest='version',
+        action='store_true',
+        help='Reports the version and exits.',
+        default=False
+    )
+    parser.add_argument(
         "--quiet",
         dest="quiet",
         action="store_true",
@@ -2205,6 +2227,10 @@ def main():
         print("Quiet = %d" % args.quiet)
         print("Buffer_size = %d" % args.buffer_size)
         print("Cmd = [%s]" % ', '.join(args.cmd))
+
+    if args.version:
+        print(__version__)
+        return
 
     global DEBUG
     DEBUG = args.debug

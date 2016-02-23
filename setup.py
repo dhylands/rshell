@@ -1,13 +1,20 @@
 import os
 from setuptools import setup
 
+import sys
+if sys.version_info < (3,4):
+    print('rshell requires Python 3.4 or newer.')
+    sys.exit(1)
+
+from rshell.version import __version__
+
 here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
     name = 'rshell',
-    version = '0.0.1',
+    version = __version__,
     author = 'Dave Hylands',
     author_email = 'dhylands@gmail.com',
     description = ('A remote shell for working with MicroPython boards.'),

@@ -26,7 +26,6 @@ try:
 except ImportError as err:
     print('sys.path =', sys.path)
     raise err
-print('sys.path =', sys.path)
 
 import argparse
 import binascii
@@ -2166,7 +2165,7 @@ class Shell(cmd.Cmd):
         sync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run)
 
 
-def main():
+def real_main():
     """The main program."""
     try:
         default_baud = int(os.getenv('RSHELL_BAUD'))
@@ -2348,7 +2347,10 @@ def main():
         shell = Shell(timing=args.timing)
         shell.cmdloop(cmd_line)
 
-if __name__ == "__main__":
+def main():
+    """This main function saves the stdin termios settings, calls real_main,
+       and restores stdin termios settings when it returns.
+    """
     save_settings = None
     stdin_fd = -1
     try:
@@ -2358,8 +2360,10 @@ if __name__ == "__main__":
     except ImportError:
         pass
     try:
-        main()
+        real_main()
     finally:
         if save_settings:
             termios.tcsetattr(stdin_fd, termios.TCSANOW, save_settings)
 
+if __name__ == "__main__":
+    main()

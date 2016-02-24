@@ -18,9 +18,15 @@
 # that sets things up so that the "from rshell.xxx" will import from the git
 # tree and not from some installed version.
 
-from rshell.getch import getch
-from rshell.pyboard import Pyboard
-from rshell.version import __version__
+import sys
+try:
+    from rshell.getch import getch
+    from rshell.pyboard import Pyboard
+    from rshell.version import __version__
+except ImportError as err:
+    print('sys.path =', sys.path)
+    raise err
+print('sys.path =', sys.path)
 
 import argparse
 import binascii
@@ -32,15 +38,35 @@ import select
 import serial
 import shutil
 import socket
-import sys
 import tempfile
 import time
 import threading
 from serial.tools import list_ports
 
-import readline
 import traceback
 
+# I got the following from: http://www.farmckon.net/2009/08/rlcompleter-how-do-i-get-it-to-work/
+ 
+# Under OSX, if you call input with a prompt which contains ANSI escape
+# sequences for colors, and readline is installed, then the escape sequences
+# do not get rendered properly as colors.
+#
+# One solution would be to not use readline, but then you'd lose TAB completion.
+# So I opted to print the colored prompt before calling input, which makes
+# things work most of the time. If you try to backspace when at the first
+# column of the input it wipes out the prompt, but everything returns to normal
+# if you hit return.
+
+BROKEN_READLINE = True 
+FAKE_INPUT_PROMPT = False
+
+import readline
+import rlcompleter
+if sys.platform == 'darwin':
+    readline.parse_and_bind ("bind ^I rl_complete")
+    BROKEN_READLINE = True
+else:
+    readline.parse_and_bind("tab: complete")
 MONTH = ('', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
 
@@ -72,6 +98,23 @@ DK_CYAN = "\x1b[2;36m"
 DK_WHITE = "\x1b[2;37m"
 
 NO_COLOR = "\x1b[0m"
+BG_LT_BLACK = "\x1b[1;40m"
+BG_LT_RED = "\x1b[1;41m"
+BG_LT_GREEN = "\x1b[1;42m"
+BG_LT_YELLOW = "\x1b[1;43m"
+BG_LT_BLUE = "\x1b[1;44m"
+BG_LT_MAGENTA = "\x1b[1;45m"
+BG_LT_CYAN = "\x1b[1;46m"
+BG_LT_WHITE = "\x1b[1;47m"
+
+BG_DK_BLACK = "\x1b[2;40m"
+BG_DK_RED = "\x1b[2;41m"
+BG_DK_GREEN = "\x1b[2;42m"
+BG_DK_YELLOW = "\x1b[2;43m"
+BG_DK_BLUE = "\x1b[2;44m"
+BG_DK_MAGENTA = "\x1b[2;45m"
+BG_DK_CYAN = "\x1b[2;46m"
+BG_DK_WHITE = "\x1b[2;47m"
 
 DIR_COLOR = LT_CYAN
 PROMPT_COLOR = LT_GREEN
@@ -1020,20 +1063,31 @@ def connect_serial(port, baud=115200, wait=False):
     return True
 
 
-class ByteWriter(object):
+class SmartFile(object):
     """Class which implements a write method which can takes bytes or str."""
 
-    def __init__(self, stdout):
-        self.stdout = stdout
+    def __init__(self, file):
+        self.file = file
+
+    def close(self):
+        self.file.close()
+
+    def flush(self):
+        self.file.flush()
+
+    def read(self, num_bytes):
+        return self.file.buffer.read(num_bytes)
+
+    def seek(self, pos):
+        self.file.seek(pos)
+
+    def tell(self):
+        return self.file.tell()
 
     def write(self, data):
         if isinstance(data, str):
-            self.stdout.write(bytes(data, encoding='utf-8'))
-        else:
-            self.stdout.write(data)
-
-    def flush(self):
-        self.stdout.flush()
+            return self.file.write(data)
+        return self.file.buffer.write(data)
 
 
 class DeviceError(Exception):
@@ -1287,9 +1341,10 @@ class Shell(cmd.Cmd):
     def __init__(self, filename=None, timing=False, **kwargs):
         cmd.Cmd.__init__(self, **kwargs)
 
-        self.stdout = ByteWriter(self.stdout.buffer)
-        self.stderr = ByteWriter(sys.stderr.buffer)
-        self.stdout_to_shell = self.stdout
+        self.real_stdout = self.stdout
+        self.smart_stdout = SmartFile(self.stdout)
+
+        self.stderr = SmartFile(sys.stderr)
 
         self.filename = filename
         self.line_num = 0
@@ -1298,7 +1353,6 @@ class Shell(cmd.Cmd):
         global cur_dir
         cur_dir = os.getcwd()
         self.prev_dir = cur_dir
-        self.set_prompt()
         self.columns = shutil.get_terminal_size().columns
 
         self.redirect_dev = None
@@ -1309,9 +1363,15 @@ class Shell(cmd.Cmd):
         self.quit_serial_reader = False
         readline.set_completer_delims(DELIMS)
 
+        self.set_prompt()
 
     def set_prompt(self):
-        self.prompt = PROMPT_COLOR + cur_dir + END_COLOR + '> '
+        prompt = PROMPT_COLOR + cur_dir + END_COLOR + '> '
+        if FAKE_INPUT_PROMPT:
+            print(prompt, end='')
+            self.prompt = ''
+        else:
+            self.prompt = prompt
 
     def cmdloop(self, line=None):
         if line:
@@ -1370,9 +1430,12 @@ class Shell(cmd.Cmd):
 
         """
         pass
+    def precmd(self, line):
+        self.stdout = self.smart_stdout
+        return line
 
     def postcmd(self, stop, line):
-        if self.stdout != self.stdout_to_shell:
+        if self.stdout != self.smart_stdout:
             if self.redirect_dev is not None:
                 # Redirecting to a remote device, now that we're finished the
                 # command, we can copy the collected output to the remote.
@@ -1386,8 +1449,9 @@ class Shell(cmd.Cmd):
                                          dst_mode=self.redirect_mode,
                                          xfer_func=send_file_to_remote)
             self.stdout.close()
-            self.stdout = self.stdout_to_shell
-        self.set_prompt()
+        self.stdout = self.real_stdout
+        if not stop:
+            self.set_prompt()
         return stop
 
     def print(self, *args, end='\n', file=None):
@@ -1396,13 +1460,14 @@ class Shell(cmd.Cmd):
         """
         if file is None:
             file = self.stdout
-        file.write(bytes(' '.join(str(arg) for arg in args), encoding='utf-8'))
-        file.write(bytes(end, encoding='utf-8'))
+        s = ' '.join(str(arg) for arg in args) + end
+        file.write(s)
 
     def print_err(self, *args, end='\n'):
         """Similar to print, but prints to stderr.
         """
         self.print(*args, end=end, file=self.stderr)
+        self.stderr.flush()
 
     def create_argparser(self, command):
         try:
@@ -1531,20 +1596,23 @@ class Shell(cmd.Cmd):
                 raise ShellError("Unable to redirect to '%s', directory doesn't exist" %
                                  self.redirect_filename)
             if args[redirect_index] == '>':
-                self.redirect_mode = 'wb'
+                self.redirect_mode = 'w'
                 if DEBUG:
                     print('Redirecting (write) to', self.redirect_filename)
             else:
-                self.redirect_mode = 'ab'
+                self.redirect_mode = 'a'
                 if DEBUG:
                     print('Redirecting (append) to', self.redirect_filename)
             self.redirect_dev, self.redirect_filename = get_dev_and_path(self.redirect_filename)
-            if self.redirect_dev is None:
-                self.stdout = open(self.redirect_filename, self.redirect_mode)
-            else:
-                # Redirecting to a remote device. We collect the results locally
-                # and copy them to the remote device at the end of the command.
-                self.stdout = tempfile.TemporaryFile()
+            try:
+                if self.redirect_dev is None:
+                    self.stdout = SmartFile(open(self.redirect_filename, self.redirect_mode))
+                else:
+                    # Redirecting to a remote device. We collect the results locally
+                    # and copy them to the remote device at the end of the command.
+                    self.stdout = SmartFile(tempfile.TemporaryFile(mode='w+'))
+            except OSError as err:
+                raise ShellError(err)
 
             del args[redirect_index + 1]
             del args[redirect_index]
@@ -2223,6 +2291,7 @@ def main():
         print("User = %s" % args.user)
         print("Password = %s" % args.password)
         print("Wait = %d" % args.wait)
+        print("nocolor = %d" % args.nocolor)
         print("Timing = %d" % args.timing)
         print("Quiet = %d" % args.quiet)
         print("Buffer_size = %d" % args.buffer_size)
@@ -2249,6 +2318,11 @@ def main():
         PROMPT_COLOR = ''
         PY_COLOR = ''
         END_COLOR = ''
+    else:
+        if sys.platform == 'darwin':
+            # The readline that comes with OSX screws up colors in the prompt
+            global FAKE_INPUT_PROMPT
+            FAKE_INPUT_PROMPT = True
 
     if args.port:
         try:
@@ -2275,4 +2349,17 @@ def main():
         shell.cmdloop(cmd_line)
 
 if __name__ == "__main__":
-    main()
+    save_settings = None
+    stdin_fd = -1
+    try:
+        import termios
+        stdin_fd = sys.stdin.fileno()
+        save_settings = termios.tcgetattr(stdin_fd)
+    except ImportError:
+        pass
+    try:
+        main()
+    finally:
+        if save_settings:
+            termios.tcsetattr(stdin_fd, termios.TCSANOW, save_settings)
+

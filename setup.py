@@ -43,6 +43,9 @@ setup(
         'pyudev >= 0.16',
     ],
     entry_points = {
-        'console_scripts': ['rshell=rshell.command_line:main'],
+        'console_scripts': [
+            'pyboard=rshell.pyboard:main',
+            'rshell=rshell.command_line:main'
+        ],
     },
 )

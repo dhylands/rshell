@@ -45,7 +45,7 @@ from serial.tools import list_ports
 import traceback
 
 # I got the following from: http://www.farmckon.net/2009/08/rlcompleter-how-do-i-get-it-to-work/
- 
+
 # Under OSX, if you call input with a prompt which contains ANSI escape
 # sequences for colors, and readline is installed, then the escape sequences
 # do not get rendered properly as colors.
@@ -56,7 +56,7 @@ import traceback
 # column of the input it wipes out the prompt, but everything returns to normal
 # if you hit return.
 
-BROKEN_READLINE = True 
+BROKEN_READLINE = True
 FAKE_INPUT_PROMPT = False
 
 import readline
@@ -2345,7 +2345,10 @@ def real_main():
             print('No MicroPython boards connected - use the connect command to add one')
             print('')
         shell = Shell(timing=args.timing)
-        shell.cmdloop(cmd_line)
+        try:
+            shell.cmdloop(cmd_line)
+        except KeyboardInterrupt:
+            print('')
 
 def main():
     """This main function saves the stdin termios settings, calls real_main,

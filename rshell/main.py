@@ -40,6 +40,8 @@ import socket
 import tempfile
 import time
 import threading
+import shlex
+import itertools
 from serial.tools import list_ports
 
 import traceback
@@ -1405,6 +1407,16 @@ class Shell(cmd.Cmd):
         if comment_idx >= 0:
             line = line[0:comment_idx]
             line = line.strip()
+
+        # search multiple commands on the same line
+        lexer = shlex.shlex(line)
+        lexer.whitespace = ''
+
+        for issemicolon, group in itertools.groupby(lexer, lambda x: x == ";"):
+            if not issemicolon:
+                self.onecmd_exec("".join(group))
+
+    def onecmd_exec(self, line):
         try:
             if self.timing:
                 start_time = time.time()

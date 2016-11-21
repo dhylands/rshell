@@ -3,12 +3,11 @@
 # set -x
 
 LOCAL_DIR='./rshell-test'
-REMOTE_DIR='/flash/rshell-test'
 
 RSHELL_DIR=rshell
 TESTS_DIR=tests
 
-RSHELL="$(pwd)/${RSHELL_DIR}/rshell.py --quiet"
+RSHELL="$(pwd)/${RSHELL_DIR}/main.py --quiet --nocolor"
 MAKE_ALL_BYTES="$(pwd)/${TESTS_DIR}/make_all_bytes.py"
 
 cmp_results() {
@@ -79,7 +78,10 @@ EOF
 
 test_dir ${LOCAL_DIR}
 echo
-test_dir ${REMOTE_DIR}
+ROOT_DIRS=$(${RSHELL} ls /pyboard)
+for root_dir in ${ROOT_DIRS}; do
+    test_dir /${root_dir}rshell-test
+done
 
 echo "PASS"
 

@@ -1348,6 +1348,8 @@ class Shell(cmd.Cmd):
 
     def __init__(self, filename=None, timing=False, **kwargs):
         cmd.Cmd.__init__(self, **kwargs)
+        if 'stdin' in kwargs:
+            cmd.Cmd.use_rawinput = 0
 
         self.real_stdout = self.stdout
         self.smart_stdout = SmartFile(self.stdout)
@@ -1374,12 +1376,16 @@ class Shell(cmd.Cmd):
         self.set_prompt()
 
     def set_prompt(self):
-        prompt = PROMPT_COLOR + cur_dir + END_COLOR + '> '
-        if FAKE_INPUT_PROMPT:
-            print(prompt, end='')
-            self.prompt = ''
+        if self.stdin == sys.stdin:
+            prompt = PROMPT_COLOR + cur_dir + END_COLOR + '> '
+            if FAKE_INPUT_PROMPT:
+                print(prompt, end='')
+                self.prompt = ''
+            else:
+                self.prompt = prompt
         else:
-            self.prompt = prompt
+            # Executing commands from a file
+            self.prompt = ''
 
     def cmdloop(self, line=None):
         if line:

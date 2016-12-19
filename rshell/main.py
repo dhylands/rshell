@@ -127,7 +127,10 @@ cur_dir = ''
 HAS_BUFFER = False
 IS_UPY = False
 DEBUG = False
-BUFFER_SIZE = 512
+TELNET_BUFFSER_SIZE = 512
+USB_BUFFSER_SIZE = 512
+UART_BUFFER_SIZE = 32
+BUFFER_SIZE = -1    # -1 = auto select USB/UART
 QUIET = False
 
 # It turns out that just because pyudev is installed doesn't mean that
@@ -289,6 +292,9 @@ def autoscan():
     """
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
+            global BUFFER_SIZE
+            if BUFFER_SIZE == -1:
+                BUFFER_SIZE = USB_BUFFER_SIZE
             connect_serial(port[0])
 
 
@@ -1039,6 +1045,9 @@ def connect(port, baud=115200, user='micro', password='python', wait=0):
 
 def connect_telnet(name, ip_address=None, user='micro', password='python'):
     """Connect to a MicroPython board via telnet."""
+    global BUFFER_SIZE
+    if BUFFER_SIZE == -1:
+        BUFFER_SIZE = TELNET_BUFFER_SIZE
     if ip_address is None:
         try:
             ip_address = socket.gethostbyname(name)
@@ -1055,6 +1064,9 @@ def connect_telnet(name, ip_address=None, user='micro', password='python'):
 
 def connect_serial(port, baud=115200, wait=0):
     """Connect to a MicroPython board via a serial port."""
+    global BUFFER_SIZE
+    if BUFFER_SIZE == -1:
+        BUFFER_SIZE = UART_BUFFER_SIZE
     if not QUIET:
         print('Connecting to %s ...' % port)
     try:
@@ -2221,7 +2233,7 @@ def real_main():
         dest="buffer_size",
         action="store",
         type=int,
-        help="Set the buffer size used for transfers (default = %d)" % default_buffer_size,
+        help="Set the buffer size used for transfers (default = %d), -1 = auto" % default_buffer_size,
         default=default_buffer_size
     )
     parser.add_argument(
@@ -2260,6 +2272,13 @@ def real_main():
         help="Enable debug features",
         default=False
     )
+    parser.add_argument(
+        '-l', '--list',
+        dest='list',
+        action='store_true',
+        help='List serial ports',
+        default=False
+    )   
     parser.add_argument(
         "-n", "--nocolor",
         dest="nocolor",
@@ -2343,6 +2362,11 @@ def real_main():
             global FAKE_INPUT_PROMPT
             FAKE_INPUT_PROMPT = True
 
+    if args.list:
+        for port in serial.tools.list_ports.comports():
+            print(port)
+        return
+
     if args.port:
         try:
             connect(args.port, baud=args.baud, wait=args.wait, user=args.user, password=args.password)
@@ -2351,6 +2375,8 @@ def real_main():
     else:
         autoscan()
     autoconnect()
+
+    print('args.filename =', args.filename)
 
     if args.filename:
         with open(args.filename) as cmd_file:

@@ -719,9 +719,18 @@ def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
 
 
 def set_time(rtc_time):
-    import pyb
-    rtc = pyb.RTC()
-    rtc.datetime(rtc_time)
+    rtc = None
+    try:
+        import pyb
+        rtc = pyb.RTC()
+        rtc.datetime(rtc_time)
+    except:
+        try:
+            import machine
+            rtc = machine.RTC()
+            rtc.datetime(rtc_time)
+        except:
+            pass
 
 
 # 0x0D's sent from the host get transformed into 0x0A's, and 0x0A sent to the
@@ -733,17 +742,21 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
     """Function which runs on the pyboard. Matches up with send_file_to_remote."""
     import sys
     import ubinascii
-    try:
-        import pyb
-        usb = pyb.USB_VCP()
-        if HAS_BUFFER and usb.isconnected():
+    if HAS_BUFFER:
+        try:
+            import pyb
+            usb = pyb.USB_VCP()
+        except:
+            try:
+                import machine
+                usb = machine.USB_VCP()
+            except:
+                usb = None
+        if usb and usb.isconnected():
             # We don't want 0x03 bytes in the data to be interpreted as a Control-C
             # This gets reset each time the REPL runs a line, so we don't need to
             # worry about resetting it ourselves
             usb.setinterrupt(-1)
-    except ImportError:
-        # This means that there is no pyb module, which happens on the wipy
-        pass
     try:
         with open(dst_filename, dst_mode) as dst_file:
             bytes_remaining = filesize

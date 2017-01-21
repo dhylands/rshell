@@ -18,6 +18,8 @@
 # that sets things up so that the "from rshell.xxx" will import from the git
 # tree and not from some installed version.
 
+pgh=print # quick removal PGH
+
 import sys
 try:
     from rshell.getch import getch
@@ -609,8 +611,9 @@ def listdir_matches(match):
 
 def listdir_stat(dirname):
     """Returns a list of tuples for each file contained in the named
-       directory. Each tuple contains the filename, followed by the tuple
-       returned by calling os.stat on the filename.
+       directory, or None if the directory does not eists. Each tuple
+       contains the filename, followed by the tuple returned by
+       calling os.stat on the filename.
     """
     import os
 
@@ -620,12 +623,18 @@ def listdir_stat(dirname):
             # Micropython dates are relative to Jan 1, 2000. On the host, time
             # is relative to Jan 1, 1970.
             return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
-        return rstat
+        return tuple(rstat) # PGH formerly returned an os.stat_result instance
+
+    # pgh In dry runs target directories may not exist hence exception handling
+    try:
+        files = os.listdir(dirname)
+    except OSError:
+        return None
+
     if dirname == '/':
-        return tuple((file, stat('/' + file))
-                     for file in os.listdir(dirname))
-    return tuple((file, stat(dirname + '/' + file))
-                 for file in os.listdir(dirname))
+        return list((file, stat('/' + file)) for file in files)
+
+    return list((file, stat(dirname + '/' + file)) for file in files)
 
 
 def make_directory(dirname):
@@ -671,51 +680,91 @@ def rm(filename, recursive=False, force=False):
 
 def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
     """Synchronizes 2 directory trees."""
-    src_files = sorted(auto(listdir_stat, src_dir), key=lambda entry: entry[0])
-    dst_files = sorted(auto(listdir_stat, dst_dir), key=lambda entry: entry[0])
-    for src_basename, src_stat in src_files:
-        dst_basename, dst_stat = dst_files[0]
+    set_src = set()  # filenames in current directory
+    d_src = {}  # Look up stat tuple from name
+    for name, stat in auto(listdir_stat, src_dir):
+        d_src[name] = stat
+        set_src.add(name)
+
+    set_dst = set()  # filenames in destination
+    d_dst = {}
+    dst_files = auto(listdir_stat, dst_dir)
+    if dst_files is None: # Directory does not exist
+        if print_func:
+            print_func("Creating directory %s" % dst_dir)
+        if not dry_run:
+            mkdir(dst_dir)
+    else:
+        for name, stat in dst_files:
+            d_dst[name] = stat
+            set_dst.add(name)
+
+    to_add = set_src - set_dst  # Files to copy to dest
+    to_del = set_dst - set_src  # To delete from dest
+    to_upd = set_dst.intersection(set_src) # In both: may need updating
+
+#    pgh('to add')
+#    for f in to_add:
+#        pgh(f)
+#    pgh('to del')
+#    for f in to_del:
+#        pgh(f)
+#    pgh('to update')
+#    for f in to_upd:
+#        pgh(f)
+
+    for src_basename in to_add:  # Name in source but absent from destination
         src_filename = src_dir + '/' + src_basename
-        dst_filename = dst_dir + '/' + dst_basename
-        if src_basename < dst_basename:
-            # Source file/dir which doesn't exist in dest - add it
-            continue
-        if src_basename == dst_basename:
-            src_mode = stat_mode(src_stat)
-            dst_mode = stat_mode(dst_stat)
-            if mode_isdir(src_mode):
-                if mode_isdir(dst_mode):
-                    # src and dst re both directories - recurse
-                    sync(src_filename, dst_filename,
-                         mirror=mirror, dry_run=dry_run, stdout=sys.stdout)
-                else:
-                    if print_func:
-                        print_func("Source '%s' is a directory and "
-                                   "destination '%s' is a file. Ignoring"
-                                   % (src_filename, dst_filename))
+        dst_filename = dst_dir + '/' + src_basename
+        if print_func:
+            print_func("Adding %s" % dst_filename)
+        src_stat = d_src[src_basename]
+        src_mode = stat_mode(src_stat)
+        if not dry_run:
+            if not mode_isdir(src_mode):
+                cp(src_filename, dst_filename)
+        if mode_isdir(src_mode):
+            sync(src_filename, dst_filename,
+                    mirror=mirror, dry_run=dry_run, print_func=print_func)
+
+    if mirror:  # May delete
+        for dst_basename in to_del:  # In dest but not in source
+            dst_filename = dst_dir + '/' + dst_basename
+            if print_func:
+                print_func("Removing %s" % dst_filename)
+            if not dry_run:
+                rm(dst_filename, recursive=True, force=True) # PGH should force be True, Dave?
+
+    for src_basename in to_upd:  # Names are identical
+        src_stat = d_src[src_basename]
+        dst_stat = d_dst[src_basename]
+        src_filename = src_dir + '/' + src_basename
+        dst_filename = dst_dir + '/' + src_basename
+        src_mode = stat_mode(src_stat)
+        dst_mode = stat_mode(dst_stat)
+        if mode_isdir(src_mode):
+            if mode_isdir(dst_mode):
+                # src and dst are both directories - recurse
+                sync(src_filename, dst_filename,
+                        mirror=mirror, dry_run=dry_run, print_func=print_func)
             else:
-                if mode_isdir(dst_mode):
-                    if print_func:
-                        print_func("Source '%s' is a file and "
-                                   "destination '%s' is a directory. Ignoring"
-                                   % (src_filename, dst_filename))
-                else:
-                    if stat_mtime(src_stat) > stat_mtime(dst_stat):
-                        if print_func:
-                            print_func('%s is newer than %s - copying'
-                                       % (src_filename, dst_filename))
-                        if not dry_run:
-                            cp(src_filename, dst_filename)
-            continue
-        while src_basename > dst_basename:
-            # file exists in dst and not in src
-            if mirror:
                 if print_func:
-                    print_func("Removing %s" % dst_filename)
-                if not dry_run:
-                    rm(dst_filename)
-            del dst_files[0]
-            dst_basename, dst_stat = dst_files[0]
+                    print_func("Source '%s' is a directory and "
+                                "destination '%s' is a file. Ignoring"
+                                % (src_filename, dst_filename))
+        else:
+            if mode_isdir(dst_mode):
+                if print_func:
+                    print_func("Source '%s' is a file and "
+                                "destination '%s' is a directory. Ignoring"
+                                % (src_filename, dst_filename))
+            else:
+                if stat_mtime(src_stat) > stat_mtime(dst_stat):
+                    if print_func:
+                        print_func('%s is newer than %s - copying'
+                                    % (src_filename, dst_filename))
+                    if not dry_run:
+                        cp(src_filename, dst_filename)
 
 
 def set_time(rtc_time):
@@ -2192,7 +2241,7 @@ class Shell(cmd.Cmd):
         ),
     )
     # Do_sync isn't fully implemented/tested yet, hence the leading underscore.
-    def _do_sync(self, line):
+    def do_sync(self, line):
         """sync [-m|--mirror] [-n|--dry-run] SRC_DIR DEST_DIR
 
            Synchronizes a destination directory tree with a source directory tree.
@@ -2200,7 +2249,7 @@ class Shell(cmd.Cmd):
         args = self.line_to_args(line)
         src_dir = resolve_path(args.src_dir)
         dst_dir = resolve_path(args.dst_dir)
-        sync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run)
+        sync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run, print_func=pgh)
 
 
 def real_main():

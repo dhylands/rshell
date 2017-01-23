@@ -18,13 +18,11 @@
 # that sets things up so that the "from rshell.xxx" will import from the git
 # tree and not from some installed version.
 
-pgh=print # quick removal PGH
-
 import sys
 try:
     from rshell.getch import getch
     from rshell.pyboard import Pyboard, PyboardError
-    from rshell.version import __version__
+#    from rshell.version import __version__
 except ImportError as err:
     print('sys.path =', sys.path)
     raise err
@@ -625,7 +623,8 @@ def listdir_stat(dirname):
             return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
         return tuple(rstat) # PGH formerly returned an os.stat_result instance
 
-    # pgh In dry runs target directories may not exist hence exception handling
+    # pgh Target directories may not exist hence exception handling
+    # pgh Exception can't be handled in calling code because of remote execution
     try:
         files = os.listdir(dirname)
     except OSError:
@@ -678,11 +677,23 @@ def rm(filename, recursive=False, force=False):
     return auto(remove_file, filename, recursive, force)
 
 
-def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
+def sync(src_dir, dst_dir, mirror, dry_run, print_func):
     """Synchronizes 2 directory trees."""
+    if not isinstance(src_dir, str) or not len(src_dir):
+        return
+    sstat = auto(get_stat, src_dir) # PGH case where source is a file: 
+    smode = stat_mode(sstat) # PGH might alias rm -r src dest to sync src dest
+    if mode_isfile(smode):
+        cp(src_dir, dst_dir + '/' + os.path.split(src_dir)[1])
+        return
+
     set_src = set()  # filenames in current directory
     d_src = {}  # Look up stat tuple from name
-    for name, stat in auto(listdir_stat, src_dir):
+    src_files = auto(listdir_stat, src_dir)
+    if src_files is None:
+        self.print_err('Source directory does not exist. Nothing to do.')
+        return
+    for name, stat in src_files:
         d_src[name] = stat
         set_src.add(name)
 
@@ -690,8 +701,7 @@ def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
     d_dst = {}
     dst_files = auto(listdir_stat, dst_dir)
     if dst_files is None: # Directory does not exist
-        if print_func:
-            print_func("Creating directory %s" % dst_dir)
+        print_func("Creating directory %s" % dst_dir)
         if not dry_run:
             mkdir(dst_dir)
     else:
@@ -703,21 +713,10 @@ def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
     to_del = set_dst - set_src  # To delete from dest
     to_upd = set_dst.intersection(set_src) # In both: may need updating
 
-#    pgh('to add')
-#    for f in to_add:
-#        pgh(f)
-#    pgh('to del')
-#    for f in to_del:
-#        pgh(f)
-#    pgh('to update')
-#    for f in to_upd:
-#        pgh(f)
-
     for src_basename in to_add:  # Name in source but absent from destination
         src_filename = src_dir + '/' + src_basename
         dst_filename = dst_dir + '/' + src_basename
-        if print_func:
-            print_func("Adding %s" % dst_filename)
+        print_func("Adding %s" % dst_filename)
         src_stat = d_src[src_basename]
         src_mode = stat_mode(src_stat)
         if not dry_run:
@@ -730,8 +729,7 @@ def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
     if mirror:  # May delete
         for dst_basename in to_del:  # In dest but not in source
             dst_filename = dst_dir + '/' + dst_basename
-            if print_func:
-                print_func("Removing %s" % dst_filename)
+            print_func("Removing %s" % dst_filename)
             if not dry_run:
                 rm(dst_filename, recursive=True, force=True) # PGH should force be True, Dave?
 
@@ -748,20 +746,17 @@ def sync(src_dir, dst_dir, mirror=False, dry_run=False, print_func=None):
                 sync(src_filename, dst_filename,
                         mirror=mirror, dry_run=dry_run, print_func=print_func)
             else:
-                if print_func:
-                    print_func("Source '%s' is a directory and "
+                print_func("Source '%s' is a directory and "
                                 "destination '%s' is a file. Ignoring"
                                 % (src_filename, dst_filename))
         else:
             if mode_isdir(dst_mode):
-                if print_func:
-                    print_func("Source '%s' is a file and "
+                print_func("Source '%s' is a file and "
                                 "destination '%s' is a directory. Ignoring"
                                 % (src_filename, dst_filename))
             else:
                 if stat_mtime(src_stat) > stat_mtime(dst_stat):
-                    if print_func:
-                        print_func('%s is newer than %s - copying'
+                    print_func('%s is newer than %s - copying'
                                     % (src_filename, dst_filename))
                     if not dry_run:
                         cp(src_filename, dst_filename)
@@ -2230,6 +2225,13 @@ class Shell(cmd.Cmd):
             default=False
         ),
         add_arg(
+            '-v', '--verbose',
+            dest='verbose',
+            action='store_true',
+            help='shows what has been done (or what would be done with -n)',
+            default=False
+        ),
+        add_arg(
             'src_dir',
             metavar='SRC_DIR',
             help='Source directory'
@@ -2240,7 +2242,7 @@ class Shell(cmd.Cmd):
             help='Destination directory'
         ),
     )
-    # Do_sync isn't fully implemented/tested yet, hence the leading underscore.
+
     def do_sync(self, line):
         """sync [-m|--mirror] [-n|--dry-run] SRC_DIR DEST_DIR
 
@@ -2249,7 +2251,9 @@ class Shell(cmd.Cmd):
         args = self.line_to_args(line)
         src_dir = resolve_path(args.src_dir)
         dst_dir = resolve_path(args.dst_dir)
-        sync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run, print_func=pgh)
+        pf = print if args.dry_run or args.verbose else lambda *args : None
+        sync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
+             print_func=pf)
 
 
 def real_main():

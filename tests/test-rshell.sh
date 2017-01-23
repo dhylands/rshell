@@ -2,10 +2,17 @@
 
 # set -x
 
-LOCAL_DIR='./rshell-test'
+LOCAL_DIR="./rshell-test"
 
 RSHELL_DIR=rshell
 TESTS_DIR=tests
+
+TMP_REF="/tmp/pyboard_ref"
+TMP_OUT="/tmp/pyboard_out"
+TMP_IN="/tmp/pyboard_in"
+TREE_CMP="$(pwd)/${TESTS_DIR}/tree_cmp.py"
+DEST_DIR="/flash/pbtest"
+
 
 RSHELL="$(pwd)/${RSHELL_DIR}/main.py --quiet --nocolor"
 MAKE_ALL_BYTES="$(pwd)/${TESTS_DIR}/make_all_bytes.py"
@@ -76,6 +83,23 @@ EOF
     ${RSHELL} rm -rf test-out
 }
 
+make_tree() {
+    dirname=$1
+    content="Pyboard test"
+    rm -r ${dirname} 2> /dev/null
+    mkdir ${dirname}
+    cd ${dirname}
+    echo ${content} > file1
+    echo ${content} > file2
+    if [ $2 -ne 2 ]; then
+        mkdir sub
+        cd sub
+        echo ${content} > file1
+        if [ $2 -eq 1 ]; then
+            echo ${content} > file2
+        fi
+    fi
+}
 test_dir ${LOCAL_DIR}
 echo
 ROOT_DIRS=$(${RSHELL} ls /pyboard)
@@ -83,7 +107,73 @@ for root_dir in ${ROOT_DIRS}; do
     test_dir /${root_dir}rshell-test
 done
 
+# sync tests
+echo
+rm -r ${TMP_IN} 2> /dev/null
+make_tree ${TMP_REF} 1 # Full set of files
+
+THIS_TEST="sync test basic"
+echo Testing ${THIS_TEST}
+${RSHELL} sync ${TMP_REF} ${DEST_DIR}
+${RSHELL} sync ${DEST_DIR} ${TMP_IN}
+${TREE_CMP} ${TMP_REF} ${TMP_IN} verbose
+if [ $? -eq 0 ]; then
+    echo PASS ${THIS_TEST}
+else
+    echo FAIL ${THIS_TEST}
+    exit 1
+fi
+
+echo
+
+# Sync without -m but one file missing from source
+THIS_TEST="sync test no delete"
+echo Testing ${THIS_TEST}
+make_tree ${TMP_OUT} 0 # Missing file
+${RSHELL} sync ${TMP_OUT} ${DEST_DIR}
+${RSHELL} sync ${DEST_DIR} ${TMP_IN}
+${TREE_CMP} ${TMP_REF} ${TMP_IN} verbose
+if [ $? -eq 0 ]; then
+    echo PASS ${THIS_TEST}
+else
+    echo FAIL ${THIS_TEST}
+    exit 1
+fi
+
+echo
+
+THIS_TEST="sync test delete file"
+echo Testing ${THIS_TEST}
+${RSHELL} sync ${TMP_OUT} ${DEST_DIR} -m
+${RSHELL} sync ${DEST_DIR} ${TMP_IN} -m
+${TREE_CMP} ${TMP_OUT} ${TMP_IN} verbose
+if [ $? -eq 0 ]; then
+    echo PASS ${THIS_TEST}
+else
+    echo FAIL ${THIS_TEST}
+    exit 1
+fi
+
+echo
+
+THIS_TEST="sync test delete directory"
+echo Testing ${THIS_TEST}
+make_tree ${TMP_OUT} 2 # Missing dir
+${RSHELL} sync ${TMP_OUT} ${DEST_DIR} -m
+${RSHELL} sync ${DEST_DIR} ${TMP_IN} -m
+${TREE_CMP} ${TMP_OUT} ${TMP_IN} verbose
+if [ $? -eq 0 ]; then
+    echo PASS ${THIS_TEST}
+else
+    echo FAIL ${THIS_TEST}
+    exit 1
+fi
+
+# Tidy up
+echo Removing test data
+${RSHELL} rm -r ${DEST_DIR}
+rm -r ${TMP_OUT} 2> /dev/null
+rm -r ${TMP_IN} 2> /dev/null
+rm -r ${TMP_REF} 2> /dev/null
+echo
 echo "PASS"
-
-
-

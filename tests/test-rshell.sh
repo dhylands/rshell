@@ -11,7 +11,7 @@ TMP_REF="/tmp/pyboard_ref"
 TMP_OUT="/tmp/pyboard_out"
 TMP_IN="/tmp/pyboard_in"
 TREE_CMP="$(pwd)/${TESTS_DIR}/tree_cmp.py"
-DEST_DIR="/flash/pbtest"
+DEST_DIR="/sd/pbtest"
 
 
 RSHELL="$(pwd)/${RSHELL_DIR}/main.py --quiet --nocolor"

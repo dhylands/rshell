@@ -679,11 +679,9 @@ def rm(filename, recursive=False, force=False):
 
 def sync(src_dir, dst_dir, mirror, dry_run, print_func):
     """Synchronizes 2 directory trees."""
-    if not isinstance(src_dir, str) or not len(src_dir):
-        return
-    sstat = auto(get_stat, src_dir) # PGH case where source is a file: 
-    smode = stat_mode(sstat) # PGH might alias rm -r src dest to sync src dest
-    if mode_isfile(smode):
+    sstat = auto(get_stat, src_dir)
+    smode = stat_mode(sstat)
+    if mode_isfile(smode):  # Source is a file: copy and quit
         cp(src_dir, dst_dir + '/' + os.path.split(src_dir)[1])
         return
 
@@ -691,7 +689,7 @@ def sync(src_dir, dst_dir, mirror, dry_run, print_func):
     d_src = {}  # Look up stat tuple from name
     src_files = auto(listdir_stat, src_dir)
     if src_files is None:
-        self.print_err('Source directory does not exist. Nothing to do.')
+        print('Source directory does not exist. Nothing to do.')
         return
     for name, stat in src_files:
         d_src[name] = stat
@@ -701,7 +699,14 @@ def sync(src_dir, dst_dir, mirror, dry_run, print_func):
     d_dst = {}
     dst_files = auto(listdir_stat, dst_dir)
     if dst_files is None: # Directory does not exist
-        print_func("Creating directory %s" % dst_dir)
+        parent = os.path.split(dst_dir.rstrip('/'))[0] # Check for nonexistent parent
+        parent_files = auto(listdir_stat, parent) if parent else True
+        # In dry run may be recursing in which case suppress invalid error
+        if not dry_run and parent_files is None:
+            print('Cannot create directory {}'.format(dst_dir))
+            return
+        else:
+            print_func("Creating directory {}".format(dst_dir))
         if not dry_run:
             mkdir(dst_dir)
     else:

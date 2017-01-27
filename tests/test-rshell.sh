@@ -7,11 +7,12 @@ LOCAL_DIR="./rshell-test"
 RSHELL_DIR=rshell
 TESTS_DIR=tests
 
-TMP_REF="/tmp/pyboard_ref"
-TMP_OUT="/tmp/pyboard_out"
-TMP_IN="/tmp/pyboard_in"
+LOCAL_ROOT=/tmp
+REMOTE_ROOT=/sd
+TMP_REF=pyboard_ref
+TMP_OUT=pyboard_out
+TMP_RESULT=pyboard
 TREE_CMP="$(pwd)/${TESTS_DIR}/tree_cmp.py"
-DEST_DIR="/sd/pbtest"
 
 
 RSHELL="$(pwd)/${RSHELL_DIR}/main.py --quiet --nocolor"
@@ -100,6 +101,7 @@ make_tree() {
         fi
     fi
 }
+
 test_dir ${LOCAL_DIR}
 echo
 ROOT_DIRS=$(${RSHELL} ls /pyboard)
@@ -107,16 +109,20 @@ for root_dir in ${ROOT_DIRS}; do
     test_dir /${root_dir}rshell-test
 done
 
-# sync tests
+# rsync tests
 echo
-rm -r ${TMP_IN} 2> /dev/null
-make_tree ${TMP_REF} 1 # Full set of files
+make_tree ${LOCAL_ROOT}/${TMP_REF} 1 # Full set of files
+make_tree ${LOCAL_ROOT}/${TMP_OUT} 1
 
-THIS_TEST="sync test basic"
+
+THIS_TEST="rsync test basic"
 echo Testing ${THIS_TEST}
-${RSHELL} sync ${TMP_REF} ${DEST_DIR}
-${RSHELL} sync ${DEST_DIR} ${TMP_IN}
-${TREE_CMP} ${TMP_REF} ${TMP_IN} verbose
+rm -r ${LOCAL_ROOT}/${TMP_RESULT} 2> /dev/null
+${RSHELL} rm -r ${REMOTE_ROOT}/${TMP_RESULT} 2> /dev/null
+${RSHELL} cp -r ${LOCAL_ROOT}/${TMP_OUT} ${REMOTE_ROOT}/${TMP_RESULT}
+
+${RSHELL} cp -r ${REMOTE_ROOT}/${TMP_RESULT} ${LOCAL_ROOT}
+${TREE_CMP} ${LOCAL_ROOT}/${TMP_OUT} ${LOCAL_ROOT}/${TMP_RESULT} verbose
 if [ $? -eq 0 ]; then
     echo PASS ${THIS_TEST}
 else
@@ -127,12 +133,18 @@ fi
 echo
 
 # Sync without -m but one file missing from source
-THIS_TEST="sync test no delete"
+THIS_TEST="rsync test no delete"
 echo Testing ${THIS_TEST}
-make_tree ${TMP_OUT} 0 # Missing file
-${RSHELL} sync ${TMP_OUT} ${DEST_DIR}
-${RSHELL} sync ${DEST_DIR} ${TMP_IN}
-${TREE_CMP} ${TMP_REF} ${TMP_IN} verbose
+rm -r ${LOCAL_ROOT}/${TMP_RESULT} 2> /dev/null
+${RSHELL} rm -r ${REMOTE_ROOT}/${TMP_RESULT} 2> /dev/null
+make_tree ${LOCAL_ROOT}/${TMP_OUT} 1
+${RSHELL} rsync ${LOCAL_ROOT}/${TMP_OUT} ${REMOTE_ROOT}
+make_tree ${LOCAL_ROOT}/${TMP_OUT} 0 # Missing file
+${RSHELL} rsync ${LOCAL_ROOT}/${TMP_OUT} ${REMOTE_ROOT}
+
+${RSHELL} rsync ${REMOTE_ROOT}/${TMP_OUT} ${LOCAL_ROOT}/${TMP_RESULT}
+
+${TREE_CMP} ${LOCAL_ROOT}/${TMP_REF} ${LOCAL_ROOT}/${TMP_RESULT} verbose
 if [ $? -eq 0 ]; then
     echo PASS ${THIS_TEST}
 else
@@ -142,11 +154,12 @@ fi
 
 echo
 
-THIS_TEST="sync test delete file"
+THIS_TEST="rsync test delete file"
 echo Testing ${THIS_TEST}
-${RSHELL} sync ${TMP_OUT} ${DEST_DIR} -m
-${RSHELL} sync ${DEST_DIR} ${TMP_IN} -m
-${TREE_CMP} ${TMP_OUT} ${TMP_IN} verbose
+rm -r ${LOCAL_ROOT}/${TMP_RESULT} 2> /dev/null
+${RSHELL} rsync -m ${LOCAL_ROOT}/${TMP_OUT} ${REMOTE_ROOT}
+${RSHELL} rsync -m ${REMOTE_ROOT}/${TMP_OUT} ${LOCAL_ROOT}/${TMP_RESULT}
+${TREE_CMP} ${LOCAL_ROOT}/${TMP_OUT} ${LOCAL_ROOT}/${TMP_RESULT} verbose
 if [ $? -eq 0 ]; then
     echo PASS ${THIS_TEST}
 else
@@ -156,12 +169,13 @@ fi
 
 echo
 
-THIS_TEST="sync test delete directory"
+THIS_TEST="rsync test delete directory"
 echo Testing ${THIS_TEST}
-make_tree ${TMP_OUT} 2 # Missing dir
-${RSHELL} sync ${TMP_OUT} ${DEST_DIR} -m
-${RSHELL} sync ${DEST_DIR} ${TMP_IN} -m
-${TREE_CMP} ${TMP_OUT} ${TMP_IN} verbose
+rm -r ${LOCAL_ROOT}/${TMP_RESULT} 2> /dev/null
+make_tree ${LOCAL_ROOT}/${TMP_OUT} 2 # Missing dir
+${RSHELL} rsync -m ${LOCAL_ROOT}/${TMP_OUT} ${REMOTE_ROOT}
+${RSHELL} rsync -m ${REMOTE_ROOT}/${TMP_OUT} ${LOCAL_ROOT}/${TMP_RESULT}
+${TREE_CMP} ${LOCAL_ROOT}/${TMP_OUT} ${LOCAL_ROOT}/${TMP_RESULT} verbose
 if [ $? -eq 0 ]; then
     echo PASS ${THIS_TEST}
 else
@@ -171,9 +185,9 @@ fi
 
 # Tidy up
 echo Removing test data
-${RSHELL} rm -r ${DEST_DIR}
-rm -r ${TMP_OUT} 2> /dev/null
-rm -r ${TMP_IN} 2> /dev/null
-rm -r ${TMP_REF} 2> /dev/null
+${RSHELL} rm -r ${REMOTE_ROOT}/${TMP_OUT}
+rm -r ${LOCAL_ROOT}/${TMP_REF} 2> /dev/null
+rm -r ${LOCAL_ROOT}/${TMP_OUT} 2> /dev/null
+rm -r ${LOCAL_ROOT}/${TMP_RESULT} 2> /dev/null
 echo
 echo "PASS"

@@ -609,7 +609,7 @@ def listdir_matches(match):
 
 def listdir_stat(dirname):
     """Returns a list of tuples for each file contained in the named
-       directory, or None if the directory does not eists. Each tuple
+       directory, or None if the directory does not exist. Each tuple
        contains the filename, followed by the tuple returned by
        calling os.stat on the filename.
     """
@@ -623,8 +623,6 @@ def listdir_stat(dirname):
             return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
         return tuple(rstat) # PGH formerly returned an os.stat_result instance
 
-    # pgh Target directories may not exist hence exception handling
-    # pgh Exception can't be handled in calling code because of remote execution
     try:
         files = os.listdir(dirname)
     except OSError:
@@ -676,13 +674,29 @@ def rm(filename, recursive=False, force=False):
     """Removes a file or directory tree."""
     return auto(remove_file, filename, recursive, force)
 
+def make_dir(dst_dir, dry_run, print_func):
+    parent = os.path.split(dst_dir.rstrip('/'))[0] # Check for nonexistent parent
+    parent_files = auto(listdir_stat, parent) if parent else True
+    if not dry_run and parent_files is None: # In dry run may be recursing in which case
+        print('Cannot create directory {}'.format(dst_dir)) # there would be no error
+        return
+    else:
+        print_func("Creating directory {}".format(dst_dir))
+    if not dry_run:
+        mkdir(dst_dir)
 
-def sync(src_dir, dst_dir, mirror, dry_run, print_func):
+def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
     """Synchronizes 2 directory trees."""
+    # This test is a hack to avoid errors when accessing /flash. When the
+    # cache synchronisation issue is solved it should be removed
+    if not isinstance(src_dir, str) or not len(src_dir):
+        return
+
     sstat = auto(get_stat, src_dir)
     smode = stat_mode(sstat)
     if mode_isfile(smode):  # Source is a file: copy and quit
-        cp(src_dir, dst_dir + '/' + os.path.split(src_dir)[1])
+        print('Source is a file not a directory.')
+#        cp(src_dir, dst_dir + '/' + os.path.split(src_dir)[1])
         return
 
     set_src = set()  # filenames in current directory
@@ -699,20 +713,23 @@ def sync(src_dir, dst_dir, mirror, dry_run, print_func):
     d_dst = {}
     dst_files = auto(listdir_stat, dst_dir)
     if dst_files is None: # Directory does not exist
-        parent = os.path.split(dst_dir.rstrip('/'))[0] # Check for nonexistent parent
-        parent_files = auto(listdir_stat, parent) if parent else True
-        # In dry run may be recursing in which case suppress invalid error
-        if not dry_run and parent_files is None:
-            print('Cannot create directory {}'.format(dst_dir))
-            return
+        make_dir(dst_dir, dry_run, print_func)
+    else: # dest exists
+        if recursed:
+            for name, stat in dst_files:
+                d_dst[name] = stat
+                set_dst.add(name)
         else:
-            print_func("Creating directory {}".format(dst_dir))
-        if not dry_run:
-            mkdir(dst_dir)
-    else:
-        for name, stat in dst_files:
-            d_dst[name] = stat
-            set_dst.add(name)
+            top_dir = os.path.split(src_dir.rstrip('/'))[-1] # Top level directory of source.
+            # Destination directory is top level directory of source
+            dst_dir = os.path.join(dst_dir, top_dir)
+            dst_files = auto(listdir_stat, dst_dir)
+            if dst_files is None:
+                make_dir(dst_dir, dry_run, print_func)
+            else:
+                for name, stat in dst_files:
+                    d_dst[name] = stat
+                    set_dst.add(name)
 
     to_add = set_src - set_dst  # Files to copy to dest
     to_del = set_dst - set_src  # To delete from dest
@@ -728,8 +745,8 @@ def sync(src_dir, dst_dir, mirror, dry_run, print_func):
             if not mode_isdir(src_mode):
                 cp(src_filename, dst_filename)
         if mode_isdir(src_mode):
-            sync(src_filename, dst_filename,
-                    mirror=mirror, dry_run=dry_run, print_func=print_func)
+            rsync(src_filename, dst_filename, mirror=mirror, dry_run=dry_run,
+                  print_func=print_func, recursed=True)
 
     if mirror:  # May delete
         for dst_basename in to_del:  # In dest but not in source
@@ -748,8 +765,8 @@ def sync(src_dir, dst_dir, mirror, dry_run, print_func):
         if mode_isdir(src_mode):
             if mode_isdir(dst_mode):
                 # src and dst are both directories - recurse
-                sync(src_filename, dst_filename,
-                        mirror=mirror, dry_run=dry_run, print_func=print_func)
+                rsync(src_filename, dst_filename, mirror=mirror, dry_run=dry_run,
+                      print_func=print_func, recursed=True)
             else:
                 print_func("Source '%s' is a directory and "
                                 "destination '%s' is a file. Ignoring"
@@ -1830,24 +1847,44 @@ class Shell(cmd.Cmd):
 
     def do_cp(self, line):
         """cp SOURCE DEST
-           cp SOURCE... DIRECTORY
+       cp SOURCE... DIRECTORY
+       cp -r SOURCE... DIRECTORY
+       cp [-r] [.|*] DIRECTORY Copy current directory to DIRECTORY.
 
-           Copies the SOURCE file to DEST. DEST may be a filename or a
-           directory name. If more than one source file is specified, then
+           Copies the SOURCE file to DEST.
+           If -r is not specified DEST may be a filename or a directory name.
+           If more than one source file is specified, then
            the destination should be a directory.
+           If -r is specified SOURCE entries may be files or directories but
+           DEST must be a directory.
         """
         args = self.line_to_args(line)
-        if len(args) < 2:
-            self.print_err('Missing desintation file')
+        if len(args.filenames) < 2:
+            self.print_err('Missing destination file')
             return
-        dst_dirname = resolve_path(args[-1])
+        dst_dirname = resolve_path(args.filenames[-1])
         dst_mode = auto(get_mode, dst_dirname)
-        for src_filename in args[:-1]:
+
+        src_filenames = args.filenames[:-1]
+        # Special case of current directory: behave like Unix
+        if len(src_filenames) == 1:
+            sdir = src_filenames[0].rstrip('/')
+            if sdir in ('.', '*') or sdir == cur_dir:
+                src_filenames = auto(listdir, cur_dir)
+
+        for src_filename in src_filenames:
             src_filename = resolve_path(src_filename)
             src_mode = auto(get_mode, src_filename)
             if not mode_exists(src_mode):
                 self.print_err("File '{}' doesn't exist".format(src_filename))
                 return False
+            if mode_isdir(src_mode):
+                if args.recursive:
+                    rsync(src_filename, dst_dirname, mirror=False, dry_run=False,
+                        print_func=lambda *args: None, recursed=False)
+                else:
+                    self.print_err("Omitting directory {}".format(src_filename))
+                continue
             if mode_isdir(dst_mode):
                 dst_filename = dst_dirname + '/' + os.path.basename(src_filename)
             else:
@@ -2162,6 +2199,22 @@ class Shell(cmd.Cmd):
             self.print_err(err)
         repl_thread.join()
 
+    argparse_cp = (
+        add_arg(
+            '-r', '--recursive',
+            dest='recursive',
+            action='store_true',
+            help='Copy directories recursively',
+            default=False
+        ),
+        add_arg(
+            'filenames',
+            metavar='FILE',
+            nargs='+',
+            help='Files to copy'
+        ),
+    )
+
     argparse_rm = (
         add_arg(
             '-r', '--recursive',
@@ -2190,11 +2243,19 @@ class Shell(cmd.Cmd):
 
     def do_rm(self, line):
         """rm [-r|--recursive][-f|--force] FILE...
+       rm [-r|--recursive][-f|--force] [.|*] clear current directory (beware)
 
            Removes files or directories (directories must be empty).
+
         """
         args = self.line_to_args(line)
-        for filename in args.filename:
+        filenames = args.filename
+        if len(filenames) == 1:
+            sdir = filenames[0].rstrip('/')
+            if sdir in ('.', '*') or sdir == cur_dir:
+                filenames = auto(listdir, cur_dir)
+
+        for filename in filenames:
             filename = resolve_path(filename)
             if not rm(filename, recursive=args.recursive, force=args.force):
                 if not args.force:
@@ -2212,7 +2273,7 @@ class Shell(cmd.Cmd):
             line = '/bin/bash'
         os.system(line)
 
-    argparse_sync = (
+    argparse_rsync = (
         add_arg(
             '-m', '--mirror',
             dest='mirror',
@@ -2248,8 +2309,8 @@ class Shell(cmd.Cmd):
         ),
     )
 
-    def do_sync(self, line):
-        """sync [-m|--mirror] [-n|--dry-run] SRC_DIR DEST_DIR
+    def do_rsync(self, line):
+        """rsync [-m|--mirror] [-n|--dry-run] SRC_DIR DEST_DIR
 
            Synchronizes a destination directory tree with a source directory tree.
         """
@@ -2257,8 +2318,8 @@ class Shell(cmd.Cmd):
         src_dir = resolve_path(args.src_dir)
         dst_dir = resolve_path(args.dst_dir)
         pf = print if args.dry_run or args.verbose else lambda *args : None
-        sync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
-             print_func=pf)
+        rsync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
+             print_func=pf, recursed=False)
 
 
 def real_main():

@@ -4,7 +4,7 @@
 args:
 full path to directory 1
 full path to directory 2
-(optional) verbose
+(optional) --verbose
 Exit value 0 on success 1 on fail
 """
 import sys
@@ -12,7 +12,7 @@ import os
 
 
 def main():
-    verbose = len(sys.argv) == 4 and sys.argv[3] == 'verbose'
+    verbose = len(sys.argv) == 4 and sys.argv[3] == '--verbose'
     source = sys.argv[1]
     dest = sys.argv[2]
     source_list = [x[1:] for x in os.walk(source)]

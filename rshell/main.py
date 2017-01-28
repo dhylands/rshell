@@ -674,16 +674,31 @@ def rm(filename, recursive=False, force=False):
     """Removes a file or directory tree."""
     return auto(remove_file, filename, recursive, force)
 
-def make_dir(dst_dir, dry_run, print_func):
+
+def print_err(*args, end='\n'):
+    """Similar to print, but prints to stderr.
+    """
+    print(*args, end=end, file=sys.stderr)
+    sys.stderr.flush()
+
+
+def make_dir(dst_dir, dry_run, print_func, recursed):
+    """Creates a directory. Produces information in case of dry run.
+    Isues error where necessary.
+    """
     parent = os.path.split(dst_dir.rstrip('/'))[0] # Check for nonexistent parent
-    parent_files = auto(listdir_stat, parent) if parent else True
-    if not dry_run and parent_files is None: # In dry run may be recursing in which case
-        print('Cannot create directory {}'.format(dst_dir)) # there would be no error
-        return
-    else:
-        print_func("Creating directory {}".format(dst_dir))
-    if not dry_run:
-        mkdir(dst_dir)
+    parent_files = auto(listdir_stat, parent) if parent else True # Relative dir
+    if dry_run:
+        if recursed: # Assume success: parent not actually created yet
+            print_func("Creating directory {}".format(dst_dir))
+        elif parent_files is None:
+            print_func("Unable to create {}".format(dst_dir))
+        return True
+    if not mkdir(dst_dir):
+        print_err("Unable to create {}".format(dst_dir))
+        return False
+    return True
+
 
 def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
     """Synchronizes 2 directory trees."""
@@ -694,43 +709,29 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
 
     sstat = auto(get_stat, src_dir)
     smode = stat_mode(sstat)
-    if mode_isfile(smode):  # Source is a file: copy and quit
-        print('Source is a file not a directory.')
-#        cp(src_dir, dst_dir + '/' + os.path.split(src_dir)[1])
+    if mode_isfile(smode):
+        print_err('Source is a file not a directory.')
         return
 
-    set_src = set()  # filenames in current directory
-    d_src = {}  # Look up stat tuple from name
+    d_src = {}  # Look up stat tuple from name in current directory
     src_files = auto(listdir_stat, src_dir)
     if src_files is None:
-        print('Source directory does not exist. Nothing to do.')
+        print_err('Source directory does not exist. Nothing to do.')
         return
     for name, stat in src_files:
         d_src[name] = stat
-        set_src.add(name)
 
-    set_dst = set()  # filenames in destination
     d_dst = {}
     dst_files = auto(listdir_stat, dst_dir)
     if dst_files is None: # Directory does not exist
-        make_dir(dst_dir, dry_run, print_func)
+        if not make_dir(dst_dir, dry_run, print_func, recursed):
+            return
     else: # dest exists
-        if recursed:
-            for name, stat in dst_files:
-                d_dst[name] = stat
-                set_dst.add(name)
-        else:
-            top_dir = os.path.split(src_dir.rstrip('/'))[-1] # Top level directory of source.
-            # Destination directory is top level directory of source
-            dst_dir = os.path.join(dst_dir, top_dir)
-            dst_files = auto(listdir_stat, dst_dir)
-            if dst_files is None:
-                make_dir(dst_dir, dry_run, print_func)
-            else:
-                for name, stat in dst_files:
-                    d_dst[name] = stat
-                    set_dst.add(name)
+        for name, stat in dst_files:
+            d_dst[name] = stat
 
+    set_dst = set(d_dst.keys())
+    set_src = set(d_src.keys())
     to_add = set_src - set_dst  # Files to copy to dest
     to_del = set_dst - set_src  # To delete from dest
     to_upd = set_dst.intersection(set_src) # In both: may need updating
@@ -1864,6 +1865,15 @@ class Shell(cmd.Cmd):
             return
         dst_dirname = resolve_path(args.filenames[-1])
         dst_mode = auto(get_mode, dst_dirname)
+        d_dst = {}
+        if args.recursive:
+            dst_files = auto(listdir_stat, dst_dirname)
+            if dst_files is not None:
+                for name, stat in dst_files:
+                    d_dst[name] = stat
+            else:
+                self.print_err("cp: target {} is not a directory".format(dst_dirname))
+                return
 
         src_filenames = args.filenames[:-1]
         # Special case of current directory: behave like Unix
@@ -1880,7 +1890,19 @@ class Shell(cmd.Cmd):
                 return False
             if mode_isdir(src_mode):
                 if args.recursive:
-                    rsync(src_filename, dst_dirname, mirror=False, dry_run=False,
+                    src_basename = os.path.basename(src_filename)
+                    if src_basename in d_dst:
+                        dst_stat = d_dst[src_basename]
+                        dst_mode = stat_mode(dst_stat)
+                        if not mode_isdir(dst_mode):
+                            self.print_err("Destination {} is not a directory".format(dst_filename))
+                            return False
+                    else:
+                        dst_filename = dst_dirname + '/' + src_basename
+                        if not mkdir(dst_filename):
+                            self.print_err("Unable to create directory {}".format(dst_filename))
+                            return False
+                    rsync(src_filename, dst_filename, mirror=False, dry_run=False,
                         print_func=lambda *args: None, recursed=False)
                 else:
                     self.print_err("Omitting directory {}".format(src_filename))
@@ -2278,23 +2300,24 @@ class Shell(cmd.Cmd):
             '-m', '--mirror',
             dest='mirror',
             action='store_true',
-            help="causes files in the destination which don't exist in"
-                 "the source to be removed. Without --mirror only file"
-                 "copies occur, not deletions will occur.",
+            help="causes files in the destination which don't exist in "
+                 "the source to be removed. Without --mirror only file "
+                 "copies occur. No deletions will take place.",
             default=False,
         ),
         add_arg(
             '-n', '--dry-run',
             dest='dry_run',
             action='store_true',
-            help='shows what would be done without actually performing any file copies',
+            help='shows what would be done without actually performing '
+            'any file copies. Implies --verbose.',
             default=False
         ),
         add_arg(
             '-v', '--verbose',
             dest='verbose',
             action='store_true',
-            help='shows what has been done (or what would be done with -n)',
+            help='shows what has been done.',
             default=False
         ),
         add_arg(

@@ -33,6 +33,7 @@ import calendar
 import cmd
 import inspect
 import os
+import fnmatch
 import select
 import serial
 import shutil
@@ -357,6 +358,35 @@ def find_macthing_files(match):
         match_prefix = match[last_slash + 1:]
         result_prefix = dirname + '/'
     return [result_prefix + filename for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
+
+def is_pattern(s):
+    """Return True if a string contains Unix wildcard pattern characters."""
+    return not set('*?[').intersection(set(s)) == set()
+
+
+def parse_pattern(s):
+    """Parse a string such as 'foo/bar/*.py'
+    Assumes is_pattern() has been called
+    1. directory to process
+    2. pattern to match"""
+    if s and s[0] == '~':
+        s = os.path.expanduser(s)
+    parts = s.split('/')
+    absolute = len(parts) > 1 and not parts[0]
+    if parts[-1] == '':
+        parts = parts[:-1] # Discard trailing /
+    if len(parts) == 0:
+        directory = ''
+        pattern = ''
+    else:
+        directory = '/'.join(parts[:-1])
+        pattern = parts[-1]
+    if not is_pattern(directory): # Check for e.g. /abc/*/def
+        if is_pattern(pattern):
+            if not directory:
+                directory = '/' if absolute else '.'
+            return directory, pattern
+    return None, None # Invalid or nonexistent pattern
 
 
 def resolve_path(path):
@@ -1850,7 +1880,7 @@ class Shell(cmd.Cmd):
         """cp SOURCE DEST
        cp SOURCE... DIRECTORY
        cp -r SOURCE... DIRECTORY
-       cp [-r] [.|*] DIRECTORY Copy current directory to DIRECTORY.
+       cp [-r] PATTERN DIRECTORY Copy matching files to DIRECTORY.
 
            Copies the SOURCE file to DEST.
            If -r is not specified DEST may be a filename or a directory name.
@@ -1865,7 +1895,7 @@ class Shell(cmd.Cmd):
             return
         dst_dirname = resolve_path(args.filenames[-1])
         dst_mode = auto(get_mode, dst_dirname)
-        d_dst = {}
+        d_dst = {}  # Destination directory: lookup stat by basename
         if args.recursive:
             dst_files = auto(listdir_stat, dst_dirname)
             if dst_files is not None:
@@ -1876,13 +1906,21 @@ class Shell(cmd.Cmd):
                 return
 
         src_filenames = args.filenames[:-1]
-        # Special case of current directory: behave like Unix
-        if len(src_filenames) == 1:
-            sdir = src_filenames[0].rstrip('/')
-            if sdir in ('.', '*') or sdir == cur_dir:
-                src_filenames = auto(listdir, cur_dir)
+
+        # Process PATTERN
+        sfn = src_filenames[0]
+        if len(src_filenames) == 1 and is_pattern(sfn):
+            directory, pattern = parse_pattern(sfn)
+            if directory is None:
+                self.print_err("Invalid pattern: {}.".format(sfn))
+                return False
+            src_filenames = fnmatch.filter(auto(listdir, directory), pattern)
+            src_filenames = [os.path.join(directory, sfn) for sfn in src_filenames] # TODO source assumed to be on PC
 
         for src_filename in src_filenames:
+            if is_pattern(src_filename):
+                self.print_err("Only one pattern permitted.")
+                return False
             src_filename = resolve_path(src_filename)
             src_mode = auto(get_mode, src_filename)
             if not mode_exists(src_mode):
@@ -2055,39 +2093,54 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_ls(self, line):
-        """ls [-a] [-l] FILE...
+        """ls [-a] [-l] PATTERN...
+       PATTERN supports * ? [seq] [!seq] filename matching
 
            List directory contents.
         """
         args = self.line_to_args(line)
         if len(args.filenames) == 0:
-            args.filenames = ['.']
-        for idx in range(len(args.filenames)):
-            filename = resolve_path(args.filenames[idx])
-            stat = auto(get_stat, filename)
-            mode = stat_mode(stat)
-            if not mode_exists(mode):
-                self.print_err("Cannot access '%s': No such file or directory" %
-                               filename)
-                continue
-            if not mode_isdir(mode):
-                if args.long:
-                    print_long(filename, stat, self.print)
-                else:
-                    self.print(filename)
-                continue
-            if len(args.filenames) > 1:
-                if idx > 0:
-                    self.print('')
-                self.print("%s:" % filename)
-            files = []
-            for filename, stat in sorted(auto(listdir_stat, filename),
-                                         key=lambda entry: entry[0]):
-                if is_visible(filename) or args.all:
+            args.filenames = ['*']
+        for idx, fn in enumerate(args.filenames):
+            if not is_pattern(fn):
+                filename = resolve_path(fn)
+                stat = auto(get_stat, filename)
+                mode = stat_mode(stat)
+                if not mode_exists(mode):
+                    self.print_err("Cannot access '%s': No such file or directory" %
+                                filename)
+                    continue
+                if not mode_isdir(mode):
                     if args.long:
                         print_long(filename, stat, self.print)
                     else:
-                        files.append(decorated_filename(filename, stat))
+                        self.print(filename)
+                    continue
+                if len(args.filenames) > 1:
+                    if idx > 0:
+                        self.print('')
+                    self.print("%s:" % filename)
+                pattern = '*'
+            else: # A pattern was specified
+                filename, pattern = parse_pattern(fn)
+                if filename is None:
+                    self.print_err("Invalid pattern {}.".format(fn))
+                    return False
+#                print('filename=', filename, 'pattern=', pattern)
+            files = []
+            ldir_stat = auto(listdir_stat, filename)
+            if ldir_stat is None:
+                self.print_err("Cannot access '%s': No such file or directory" %
+                                filename)
+            else:
+                for filename, stat in sorted(ldir_stat,
+                                            key=lambda entry: entry[0]):
+                    if is_visible(filename) or args.all:
+                        if fnmatch.fnmatch(filename, pattern):
+                            if args.long:
+                                print_long(filename, stat, self.print)
+                            else:
+                                files.append(decorated_filename(filename, stat))
             if len(files) > 0:
                 print_cols(sorted(files), self.print, self.columns)
 
@@ -2265,17 +2318,23 @@ class Shell(cmd.Cmd):
 
     def do_rm(self, line):
         """rm [-r|--recursive][-f|--force] FILE...
-       rm [-r|--recursive][-f|--force] [.|*] clear current directory (beware)
+       rm [-r|--recursive][-f|--force] PATTERN delete matching files
 
            Removes files or directories (directories must be empty).
 
         """
         args = self.line_to_args(line)
         filenames = args.filename
-        if len(filenames) == 1:
-            sdir = filenames[0].rstrip('/')
-            if sdir in ('.', '*') or sdir == cur_dir:
-                filenames = auto(listdir, cur_dir)
+        # Process PATTERN
+        sfn = filenames[0]
+        if len(filenames) == 1 and is_pattern(sfn):
+            directory, pattern = parse_pattern(sfn)
+            if directory is None:
+                self.print_err("Invalid pattern {}.".format(sfn))
+                return False
+
+            filenames = fnmatch.filter(auto(listdir, directory), pattern)
+            filenames = [directory + '/' + sfn for sfn in filenames] # TODO dest assumed to be on target (or Linux PC)
 
         for filename in filenames:
             filename = resolve_path(filename)

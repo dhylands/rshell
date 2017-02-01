@@ -1937,12 +1937,11 @@ class Shell(cmd.Cmd):
         d_dst = {}  # Destination directory: lookup stat by basename
         if args.recursive:
             dst_files = auto(listdir_stat, dst_dirname)
-            if dst_files is not None:
-                for name, stat in dst_files:
-                    d_dst[name] = stat
-            else:
+            if dst_files is None:
                 self.print_err("cp: target {} is not a directory".format(dst_dirname))
                 return
+            for name, stat in dst_files:
+                d_dst[name] = stat
 
         src_filenames = args.filenames[:-1]
 
@@ -1950,23 +1949,23 @@ class Shell(cmd.Cmd):
         sfn = src_filenames[0]
         if is_pattern(sfn):
             if len(src_filenames) > 1:
-                self.print_err("Only one pattern permitted.")
-                return False
+                self.print_err("Usage: cp [-r] PATTERN DIRECTORY")
+                return
             src_filenames = process_pattern(sfn)
             if src_filenames is None:
-                return False
+                return
 
         for src_filename in src_filenames:
             if is_pattern(src_filename):
                 self.print_err("Only one pattern permitted.")
-                return False
+                return
             src_filename = resolve_path(src_filename)
             src_mode = auto(get_mode, src_filename)
             if not mode_exists(src_mode):
                 self.print_err("File '{}' doesn't exist".format(src_filename))
-                return False
+                return
             if mode_isdir(src_mode):
-                if args.recursive:
+                if args.recursive: # Copying a directory
                     src_basename = os.path.basename(src_filename)
                     dst_filename = dst_dirname + '/' + src_basename
                     if src_basename in d_dst:
@@ -1974,11 +1973,11 @@ class Shell(cmd.Cmd):
                         dst_mode = stat_mode(dst_stat)
                         if not mode_isdir(dst_mode):
                             self.print_err("Destination {} is not a directory".format(dst_filename))
-                            return False
+                            return
                     else:
                         if not mkdir(dst_filename):
                             self.print_err("Unable to create directory {}".format(dst_filename))
-                            return False
+                            return
 
                     rsync(src_filename, dst_filename, mirror=False, dry_run=False,
                         print_func=lambda *args: None, recursed=False)
@@ -2371,11 +2370,11 @@ class Shell(cmd.Cmd):
         sfn = filenames[0]
         if is_pattern(sfn):
             if len(filenames) > 1:
-                self.print_err("Only one pattern permitted.")
-                return False
+                self.print_err("Usage: rm [-r] [-f] PATTERN")
+                return
             filenames = process_pattern(sfn)
             if filenames is None:
-                return False
+                return
 
         for filename in filenames:
             filename = resolve_path(filename)

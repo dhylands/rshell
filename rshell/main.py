@@ -22,7 +22,7 @@ import sys
 try:
     from rshell.getch import getch
     from rshell.pyboard import Pyboard, PyboardError
-#    from rshell.version import __version__
+    from rshell.version import __version__
 except ImportError as err:
     print('sys.path =', sys.path)
     raise err
@@ -359,11 +359,22 @@ def find_macthing_files(match):
         result_prefix = dirname + '/'
     return [result_prefix + filename for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
 
+
+def print_err(*args, end='\n'):
+    """Similar to print, but prints to stderr.
+    """
+    print(*args, end=end, file=sys.stderr)
+    sys.stderr.flush()
+
+
 def is_pattern(s):
-    """Return True if a string contains Unix wildcard pattern characters."""
+    """Return True if a string contains Unix wildcard pattern characters.
+    Determine user's intention rather than actual validity."""
     return not set('*?[').intersection(set(s)) == set()
 
 
+# Uses string processing rather than os.path to guarantee it won't
+# fail with malformed pattern strings
 def parse_pattern(s):
     """Parse a string such as 'foo/bar/*.py'
     Assumes is_pattern() has been called
@@ -387,6 +398,37 @@ def parse_pattern(s):
                 directory = '/' if absolute else '.'
             return directory, pattern
     return None, None # Invalid or nonexistent pattern
+
+
+def validate_pattern(fn):
+    """On success return an absolute path and a pattern.
+    Otherwise print a message and return None, None
+    """
+    directory, pattern = parse_pattern(fn)
+    if directory is None:
+        print_err("Invalid pattern {}.".format(fn))
+        return None, None
+    target = resolve_path(directory)
+    mode = auto(get_mode, target)
+    if not mode_exists(mode):
+        print_err("cannot access '{}': No such file or directory".format(fn))
+        return None, None
+    if not mode_isdir(mode):
+        print_err("cannot access '{}': Not a directory".format(fn))
+        return None, None
+    return directory, pattern
+
+
+def process_pattern(fn):
+    """Return a list of paths matching a pattern (or None on error).
+    """
+    directory, pattern = validate_pattern(fn)
+    if directory is not None:
+        filenames = fnmatch.filter(auto(listdir, directory), pattern)
+        if filenames:
+            return [directory + '/' + sfn for sfn in filenames]
+        else:
+            print_err("cannot access '{}': No such file or directory".format(fn))
 
 
 def resolve_path(path):
@@ -691,7 +733,10 @@ def remove_file(filename, recursive=False, force=False):
                     success = remove_file(filename + '/' + file, recursive, force)
                     if not success and not force:
                         return False
-            os.rmdir(filename)
+                os.rmdir(filename) # PGH Work like Unix: require recursive
+            else:
+                if not force:
+                    return False
         else:
             os.remove(filename)
     except:
@@ -703,13 +748,6 @@ def remove_file(filename, recursive=False, force=False):
 def rm(filename, recursive=False, force=False):
     """Removes a file or directory tree."""
     return auto(remove_file, filename, recursive, force)
-
-
-def print_err(*args, end='\n'):
-    """Similar to print, but prints to stderr.
-    """
-    print(*args, end=end, file=sys.stderr)
-    sys.stderr.flush()
 
 
 def make_dir(dst_dir, dry_run, print_func, recursed):
@@ -746,7 +784,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
     d_src = {}  # Look up stat tuple from name in current directory
     src_files = auto(listdir_stat, src_dir)
     if src_files is None:
-        print_err('Source directory does not exist. Nothing to do.')
+        print_err('Source directory {} does not exist.'.format(src_dir))
         return
     for name, stat in src_files:
         d_src[name] = stat
@@ -754,6 +792,9 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
     d_dst = {}
     dst_files = auto(listdir_stat, dst_dir)
     if dst_files is None: # Directory does not exist
+        if not recursed:
+            print_err('Destination directory {} does not exist.'.format(dst_dir))
+            return
         if not make_dir(dst_dir, dry_run, print_func, recursed):
             return
     else: # dest exists
@@ -784,7 +825,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
             dst_filename = dst_dir + '/' + dst_basename
             print_func("Removing %s" % dst_filename)
             if not dry_run:
-                rm(dst_filename, recursive=True, force=True) # PGH should force be True, Dave?
+                rm(dst_filename, recursive=True, force=True)
 
     for src_basename in to_upd:  # Names are identical
         src_stat = d_src[src_basename]
@@ -1877,18 +1918,16 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_cp(self, line):
-        """cp SOURCE DEST
-       cp SOURCE... DIRECTORY
-       cp -r SOURCE... DIRECTORY
-       cp [-r] PATTERN DIRECTORY Copy matching files to DIRECTORY.
+        """cp SOURCE DEST               Copy a single SOURCE file to DEST file.
+       cp SOURCE... DIRECTORY       Copy multiple SOURCE files to a directory.
+       cp [-r|--recursive] [SOURCE|SOURCE_DIR]... DIRECTORY
+       cp [-r] PATTERN DIRECTORY    Copy matching files to DIRECTORY.
 
-           Copies the SOURCE file to DEST.
-           If -r is not specified DEST may be a filename or a directory name.
-           If more than one source file is specified, then
-           the destination should be a directory.
-           If -r is specified SOURCE entries may be files or directories but
-           DEST must be a directory.
-        """
+           The destination must be a directory except in the case of
+           copying a single file. To copy directories -r must be specified.
+           This will cause directories and their contents to be recursively
+           copied.
+       """
         args = self.line_to_args(line)
         if len(args.filenames) < 2:
             self.print_err('Missing destination file')
@@ -1909,13 +1948,13 @@ class Shell(cmd.Cmd):
 
         # Process PATTERN
         sfn = src_filenames[0]
-        if len(src_filenames) == 1 and is_pattern(sfn):
-            directory, pattern = parse_pattern(sfn)
-            if directory is None:
-                self.print_err("Invalid pattern: {}.".format(sfn))
+        if is_pattern(sfn):
+            if len(src_filenames) > 1:
+                self.print_err("Only one pattern permitted.")
                 return False
-            src_filenames = fnmatch.filter(auto(listdir, directory), pattern)
-            src_filenames = [os.path.join(directory, sfn) for sfn in src_filenames] # TODO source assumed to be on PC
+            src_filenames = process_pattern(sfn)
+            if src_filenames is None:
+                return False
 
         for src_filename in src_filenames:
             if is_pattern(src_filename):
@@ -1929,6 +1968,7 @@ class Shell(cmd.Cmd):
             if mode_isdir(src_mode):
                 if args.recursive:
                     src_basename = os.path.basename(src_filename)
+                    dst_filename = dst_dirname + '/' + src_basename
                     if src_basename in d_dst:
                         dst_stat = d_dst[src_basename]
                         dst_mode = stat_mode(dst_stat)
@@ -1936,10 +1976,10 @@ class Shell(cmd.Cmd):
                             self.print_err("Destination {} is not a directory".format(dst_filename))
                             return False
                     else:
-                        dst_filename = dst_dirname + '/' + src_basename
                         if not mkdir(dst_filename):
                             self.print_err("Unable to create directory {}".format(dst_filename))
                             return False
+
                     rsync(src_filename, dst_filename, mirror=False, dry_run=False,
                         print_func=lambda *args: None, recursed=False)
                 else:
@@ -2085,7 +2125,7 @@ class Shell(cmd.Cmd):
             'filenames',
             metavar='FILE',
             nargs='*',
-            help='Files or directories to list'
+            help='Files directories or patterns to list'
         ),
     )
 
@@ -2093,8 +2133,8 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_ls(self, line):
-        """ls [-a] [-l] PATTERN...
-       PATTERN supports * ? [seq] [!seq] filename matching
+        """ls [-a] [-l] [FILE|DIRECTORY|PATTERN]...
+       PATTERN supports * ? [seq] [!seq] Unix filename matching
 
            List directory contents.
         """
@@ -2122,11 +2162,9 @@ class Shell(cmd.Cmd):
                     self.print("%s:" % filename)
                 pattern = '*'
             else: # A pattern was specified
-                filename, pattern = parse_pattern(fn)
-                if filename is None:
-                    self.print_err("Invalid pattern {}.".format(fn))
-                    return False
-#                print('filename=', filename, 'pattern=', pattern)
+                filename, pattern = validate_pattern(fn)
+                if filename is None: # An error was printed
+                    continue
             files = []
             ldir_stat = auto(listdir_stat, filename)
             if ldir_stat is None:
@@ -2137,6 +2175,7 @@ class Shell(cmd.Cmd):
                                             key=lambda entry: entry[0]):
                     if is_visible(filename) or args.all:
                         if fnmatch.fnmatch(filename, pattern):
+                            printed = True
                             if args.long:
                                 print_long(filename, stat, self.print)
                             else:
@@ -2286,7 +2325,7 @@ class Shell(cmd.Cmd):
             'filenames',
             metavar='FILE',
             nargs='+',
-            help='Files to copy'
+            help='Pattern or files and directories to copy'
         ),
     )
 
@@ -2302,14 +2341,14 @@ class Shell(cmd.Cmd):
             '-f', '--force',
             dest='force',
             action='store_true',
-            help='ignore nonexistant files and arguments',
+            help='ignore nonexistent files and arguments',
             default=False
         ),
         add_arg(
             'filename',
             metavar='FILE',
             nargs='+',
-            help='File to remove'
+            help='Pattern or files and directories to remove'
         ),
     )
 
@@ -2317,24 +2356,26 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_rm(self, line):
-        """rm [-r|--recursive][-f|--force] FILE...
-       rm [-r|--recursive][-f|--force] PATTERN delete matching files
+        """rm [-f|--force] FILE...            Remove one or more files
+       rm [-f|--force] PATTERN            Remove multiple files
+       rm -r [-f|--force] [FILE|DIRECTORY]... Files and/or directories
+       rm -r [-f|--force] PATTERN         Multiple files and/or directories
 
-           Removes files or directories (directories must be empty).
+           Removes files or directories. To remove directories (and
+           any contents) -r must be specified.
 
         """
         args = self.line_to_args(line)
         filenames = args.filename
         # Process PATTERN
         sfn = filenames[0]
-        if len(filenames) == 1 and is_pattern(sfn):
-            directory, pattern = parse_pattern(sfn)
-            if directory is None:
-                self.print_err("Invalid pattern {}.".format(sfn))
+        if is_pattern(sfn):
+            if len(filenames) > 1:
+                self.print_err("Only one pattern permitted.")
                 return False
-
-            filenames = fnmatch.filter(auto(listdir, directory), pattern)
-            filenames = [directory + '/' + sfn for sfn in filenames] # TODO dest assumed to be on target (or Linux PC)
+            filenames = process_pattern(sfn)
+            if filenames is None:
+                return False
 
         for filename in filenames:
             filename = resolve_path(filename)
@@ -2392,7 +2433,7 @@ class Shell(cmd.Cmd):
     )
 
     def do_rsync(self, line):
-        """rsync [-m|--mirror] [-n|--dry-run] SRC_DIR DEST_DIR
+        """rsync [-m|--mirror] [-n|--dry-run] [-v|--verbose] SRC_DIR DEST_DIR
 
            Synchronizes a destination directory tree with a source directory tree.
         """

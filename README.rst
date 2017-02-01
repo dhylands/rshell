@@ -299,12 +299,35 @@ cp
 
 ::
 
-    cp SOURCE DEST
+    usage: cp SOURCE DEST
     cp SOURCE... DIRECTORY
+    cp [-r|--recursive] [SOURCE|SRC_DIR]... DIRECTORY
+    cp [-r|--recursive] PATTERN DIRECTORY
+
+    positional arguments:
+      DEST             A destination file
+      SOURCE           File to copy
+      SRC_DIR          Directory to copy
+      PATTERN          File or directory pattern match string e.g. foo/*.py
+
+    optional arguments:
+      -h, --help       show this help message and exit
+      -r, --recursive  copy directories recursively
 
 Copies the SOURCE file to DEST. DEST may be a filename or a directory
 name. If more than one source file is specified, then the destination
 should be a directory.
+
+Directories will only be copied if -r is specified.
+
+A single pattern may be specified, in which case the destination
+should be a directory. Pattern matching is performed according to Unix
+rules.
+
+Recursive copying uses rsync (see below): where a file exists on source
+and destination, it will only be copied if the source is newer than the
+destination.
+
 
 echo
 ----
@@ -366,17 +389,21 @@ ls
 
 ::
 
-    usage: ls [-a] [-l] FILE...
+    usage: ls [-a] [-l] [FILE|DIRECTORY|PATTERN]...
 
     List directory contents.
 
     positional arguments:
-      FILE        Files or directories to list
+      FILE        File to list (show absolute path)
+      DIRECTORY   Directory (list contents)
+      PATTERN     File or directory pattern match string e.g. foo/*.py
 
     optional arguments:
       -h, --help  show this help message and exit
       -a, --all   do not ignore hidden files
       -l, --long  use a long listing format
+
+Pattern matching is performed according to Unix rules.
 
 mkdir
 -----
@@ -419,17 +446,53 @@ rm
 
 ::
 
-    usage: rm [-r|--recursive][-f|--force] FILE...
+    usage: rm [-f|--force] FILE...
+    rm [-f|--force] PATTERN
+    rm -r [-f|--force] PATTERN
+    rm -r [-f|--force] [FILE|DIRECTORY]...
 
-    Removes files or directories (directories must be empty).
+    Removes files or directories (including their contents).
 
     positional arguments:
       FILE             File to remove
+      DIRECTORY        Directory to remove (-r required)
+      PATTERN          File matching pattern e.g. *.py
 
     optional arguments:
       -h, --help       show this help message and exit
       -r, --recursive  remove directories and their contents recursively
       -f, --force      ignore nonexistant files and arguments
+
+A single pattern may be specified. Pattern matching is performed
+according to Unix rules. Directories can only be removed if the 
+recursive argument is provided. Beware of rm -r * or worse.
+
+rsync
+-----
+
+::
+
+    usage: rsync [-m|--mirror] [-n|--dry-run] [-v|--verbose] SRC_DIR DEST_DIR
+
+    Recursively synchronises a source directory to a destination.
+    Directories must exist.
+
+    positional arguments:
+      SRC_DIR          Directory containing source files.
+      DEST_DIR         Directory for destination
+
+    optional arguments:
+      -h, --help       show this help message and exit
+      -m, --mirror     remove files or directories from destination if
+                       absent from source.
+      -n, --dry-run    make no changes but report what would be done. Implies -v
+      -v, --verbose    report changes made.
+
+
+Synchronisation is performed by comparing the date and time of source
+and destination files. Files are copied if the source is newer than the
+destination.
+
 
 shell
 -----

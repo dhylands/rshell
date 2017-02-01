@@ -7,7 +7,8 @@ LOCAL_DIR="./rshell-test"
 RSHELL_DIR=rshell
 TESTS_DIR=tests
 
-RSHELL="$(pwd)/${RSHELL_DIR}/main.py --quiet --nocolor"
+#RSHELL="$(pwd)/${RSHELL_DIR}/main.py --quiet --nocolor"
+RSHELL="$(pwd)/r.py --quiet --nocolor"
 MAKE_ALL_BYTES="$(pwd)/${TESTS_DIR}/make_all_bytes.py"
 
 cmp_results() {
@@ -106,8 +107,8 @@ rsync_test() {
     local TMP_OUT="pyboard_out"
     local TMP_RESULT="pyboard"
     local TREE_CMP="$(pwd)/${TESTS_DIR}/tree_cmp.py"
-    local FLAGS=""
-#    local FLAGS="--verbose"
+#    local FLAGS=""
+    local FLAGS="--verbose"
 
     echo
     make_tree ${LOCAL_ROOT}/${TMP_REF} # Unchanging
@@ -117,11 +118,11 @@ rsync_test() {
     echo Testing ${THIS_TEST}
     ${RSHELL} rm -r ${REMOTE_ROOT}/${TMP_RESULT} 2> /dev/null
     ${RSHELL} mkdir ${REMOTE_ROOT}/${TMP_RESULT}
-    ${RSHELL} cp -r ${LOCAL_ROOT}/${TMP_OUT} ${REMOTE_ROOT}/${TMP_RESULT}
+    ${RSHELL} cp -r ${LOCAL_ROOT}/${TMP_OUT}/* ${REMOTE_ROOT}/${TMP_RESULT}
 
     rm -r ${LOCAL_ROOT}/${TMP_RESULT} 2> /dev/null
     mkdir ${LOCAL_ROOT}/${TMP_RESULT}
-    ${RSHELL} cp -r ${REMOTE_ROOT}/${TMP_RESULT} ${LOCAL_ROOT}/${TMP_RESULT}
+    ${RSHELL} cp -r ${REMOTE_ROOT}/${TMP_RESULT}/* ${LOCAL_ROOT}/${TMP_RESULT}
     ${TREE_CMP} ${LOCAL_ROOT}/${TMP_OUT} ${LOCAL_ROOT}/${TMP_RESULT} ${FLAGS}
     report $? "${THIS_TEST}"
 

@@ -2275,6 +2275,7 @@ class Shell(cmd.Cmd):
                 if line[-1] == '~':
                     line = line[:-1]
                     self.quit_when_no_output = True
+                line = ';'.join(line.split('~'))
                 dev.write(bytes(line, encoding='utf-8'))
                 dev.write(b'\r')
             if not self.quit_when_no_output:

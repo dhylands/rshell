@@ -442,6 +442,13 @@ For example, you could use:
 
 and it will boot the pyboard into DFU.
 
+If you want to execute multiple Python commands these should be separated
+by the ~ character (not the ; character):
+
+::
+
+    rshell.py repl ~ import mymodule ~ mymodule.run()
+
 rm
 --
 

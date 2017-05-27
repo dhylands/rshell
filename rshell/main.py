@@ -2610,7 +2610,8 @@ def real_main():
             print(err)
     else:
         autoscan()
-    autoconnect()
+    if sys.platform != 'darwin':
+        autoconnect()
 
     if args.filename:
         with open(args.filename) as cmd_file:

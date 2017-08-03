@@ -2529,10 +2529,10 @@ def real_main():
         default=False
     )
     parser.add_argument(
-        "--binary",
+        "-a", "--ascii",
         dest="binary_xfer",
         action="store_true",
-        help="Enable binary file transfer",
+        help="ASCII encode binary files for transfer",
         default=False
     )
     parser.add_argument(

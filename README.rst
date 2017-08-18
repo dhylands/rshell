@@ -117,6 +117,7 @@ following displayed:
       -d, --debug           Enable debug features
       -n, --nocolor         Turn off colorized output
       --wait                How long to wait for serial port
+      --binary              Enable binary file transfer
       --timing              Print timing information about each command
       --quiet               Turns off some output (useful for testing)
 
@@ -166,6 +167,13 @@ By default, rshell uses ANSI color escape codes when displaying the
 prompt and ls output. This option allows colorized output to be
 disabled.
 
+-a --ascii
+----------
+
+On certain platforms the raw REPL mode is unreliable with particular sequences
+of binary characters. Specifying --ascii enables the transfer of binary files
+to such platforms. It does this by encoding the data as ASCII hex.
+
 --wait
 ------
 
@@ -185,7 +193,7 @@ command line.
 -------
 
 This option causes the Connecting messages printed when rshell starts to be
-suppressed. This is mostly useful the test scripts.
+suppressed. This is mostly useful for the test scripts.
 
 --timing
 --------

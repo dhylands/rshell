@@ -1258,7 +1258,8 @@ class Device(object):
     def __init__(self, pyb):
         self.pyb = pyb
         self.has_buffer = False  # needs to be set for remote_eval to work
-        self.has_buffer = self.remote_eval(test_buffer)
+        if not BINARY_XFER:
+            self.has_buffer = self.remote_eval(test_buffer)
         if self.has_buffer:
             if DEBUG:
                 print("Setting has_buffer to True")
@@ -2528,6 +2529,13 @@ def real_main():
         default=False
     )
     parser.add_argument(
+        "-a", "--ascii",
+        dest="binary_xfer",
+        action="store_true",
+        help="ASCII encode binary files for transfer",
+        default=False
+    )
+    parser.add_argument(
         "--wait",
         dest="wait",
         type=int,
@@ -2571,6 +2579,7 @@ def real_main():
         print("Password = %s" % args.password)
         print("Wait = %d" % args.wait)
         print("nocolor = %d" % args.nocolor)
+        print("binary = %d" % args.binary_xfer)
         print("Timing = %d" % args.timing)
         print("Quiet = %d" % args.quiet)
         print("Buffer_size = %d" % args.buffer_size)
@@ -2602,6 +2611,9 @@ def real_main():
             # The readline that comes with OSX screws up colors in the prompt
             global FAKE_INPUT_PROMPT
             FAKE_INPUT_PROMPT = True
+
+    global BINARY_XFER
+    BINARY_XFER = args.binary_xfer
 
     if args.port:
         try:

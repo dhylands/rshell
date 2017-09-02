@@ -1,7 +1,7 @@
 rshell
 =========
 
-Remote MicroPytyhon shell.
+Remote MicroPython shell.
 
 This is a simple shell which runs on the host and uses MicroPython's
 raw-REPL to send python snippets to the pyboard in order to get
@@ -89,7 +89,7 @@ Command Line Options
 -h, --help
 ----------
 
-Displays a lit of the valid options. You should get something like the
+Displays a list of the valid options. You should get something like the
 following displayed:
 
 ::
@@ -228,25 +228,38 @@ exit. Examples:
     rshell cp somefile.py /flash
     rshell repl ~ pyb.bootloader() ~
 
-File System
+Board Names
 ===========
 
-rshell can be connected to multiple pyboards simultaneously. If the
-board module exists on the pyboard (i.e. a file named board.py somewhere
+rshell can be connected to multiple pyboards simultaneously. If a
+`board` module exists on the pyboard (i.e. a file named `board.py` somewhere
 in the module search path) and it contains an attribute called name then
 the pyboard will use that name. If the board module can't be imported
 then the board will be named, pyboard or wipy. Names will have -1 (or
 some other number) to make the board name unique.
 
-You can access the internal flash on the first board connected using
-/flash and the sd card on the first board connected can be accessed
-using /sd.
+File System
+===========
 
-For all other connected pyboards, you can use /board-name/flash or
-/board-name/sd (you can see the board names using the boards command).
+PyBoards
+--------
+
+You can access the internal flash on the first board connected using
+`/flash` and the sd card on the first board connected can be accessed
+using `/sd`.
+
+For all other connected pyboards, you can use `/board-name/flash` or
+`/board-name/sd` (you can see the board names using the boards command).
 
 The boards command will show all of the connected pyboards, along with all of
 the directories which map onto that pyboard.
+
+ESP8266
+-------
+
+ESP8266 boards do not have /flash or /sd directories.
+
+The internal flash filesystem can be accessed via `/board-name` or `/pyboard` if the board has no name.
 
 Commands
 ========
@@ -496,8 +509,8 @@ rsync
     Directories must exist.
 
     positional arguments:
-      SRC_DIR          Directory containing source files.
-      DEST_DIR         Directory for destination
+      SRC_DIR          Local directory containing source files.
+      DEST_DIR         Device directory for destination
 
     optional arguments:
       -h, --help       show this help message and exit

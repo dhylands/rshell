@@ -773,6 +773,18 @@ def make_dir(dst_dir, dry_run, print_func, recursed):
 
 def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
     """Synchronizes 2 directory trees."""
+    # Verify that the destination path refers to a device path and not a local path.
+    # If dst_dir == '/' and mirror == true for example it could result in the local hard disk being wiped
+    dst_dev, _ = get_dev_and_path(dst_dir)
+    if not dst_dev:
+        print_err('Destination refers to a local directory (are you missing /pyboard ?)')
+        return
+
+    src_dev, _ = get_dev_and_path(src_dir)
+    if src_dev:
+        print_err('Source refers to a device directory')
+        return
+
     # This test is a hack to avoid errors when accessing /flash. When the
     # cache synchronisation issue is solved it should be removed
     if not isinstance(src_dir, str) or not len(src_dir):

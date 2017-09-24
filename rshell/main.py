@@ -2652,7 +2652,7 @@ def main():
         import termios
         stdin_fd = sys.stdin.fileno()
         save_settings = termios.tcgetattr(stdin_fd)
-    except ImportError:
+    except:
         pass
     try:
         real_main()

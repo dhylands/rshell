@@ -2242,8 +2242,8 @@ class Shell(cmd.Cmd):
            Use Control-X to exit REPL mode and return the shell. It may take
            a second or two before the REPL exits.
 
-           If you prvide a line to the repl command, then that will be executed.
-           If you want the repl to exit, end the line with the ~ character.
+           If you provide a line to the REPL command, then that will be executed.
+           If you want the REPL to exit, end the line with the ~ character.
         """
         args = self.line_to_args(line)
         if len(args) > 0 and line[0] != '~':

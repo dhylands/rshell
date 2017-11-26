@@ -77,11 +77,11 @@ entering the repl and importing it.
 
     Micro Python v1.4.3-28-ga3a14b9 on 2015-05-21; PYBv1.0 with STM32F405RG
     Type "help()" for more information.
-    >>> 
+    >>>
     >>> import hello
     Hello World
-    >>> 
-    /home/dhylands/Dropbox/micropython/rshell> 
+    >>>
+    /home/dhylands/Dropbox/micropython/rshell>
 
 Command Line Options
 ====================
@@ -233,10 +233,10 @@ File System
 
 rshell can be connected to multiple pyboards simultaneously. If the
 board module exists on the pyboard (i.e. a file named board.py somewhere
-in the module search path) and it contains an attribute called name then
-the pyboard will use that name. If the board module can't be imported
-then the board will be named, pyboard or wipy. Names will have -1 (or
-some other number) to make the board name unique.
+in the module search path) and it contains an attribute called name
+(e.g. :code:`name = "myboard"`) then the pyboard will use that name. If the board
+module can't be imported then the board will be named, pyboard or wipy.
+Names will have -1 (or some other number) to make the board name unique.
 
 You can access the internal flash on the first board connected using
 /flash and the sd card on the first board connected can be accessed
@@ -271,6 +271,15 @@ boards
 Lists all of the boards that rshell is currently connected to, their
 names, and the connection.
 
+You can give a custom name to a board with either copying over a :code:`board.py`
+file or using the :code:`echo` command, e.g.
+
+::
+
+    echo name="myboard" > /pyboard/board.py
+
+(Remember to exit rshell and re-enter to see the change).
+
 cat
 ---
 
@@ -278,7 +287,7 @@ cat
 
     cat FILENAME...
 
-Concatinates files and sends to stdout.
+Concatenates files and sends to stdout.
 
 cd
 --
@@ -330,7 +339,7 @@ Directories will only be copied if -r is specified.
 
 A single pattern may be specified, in which case the destination
 should be a directory. Pattern matching is performed according to a subset
-of the Unix rules (see below). 
+of the Unix rules (see below).
 
 Recursive copying uses rsync (see below): where a file exists on source
 and destination, it will only be copied if the source is newer than the
@@ -412,7 +421,7 @@ ls
       -l, --long  use a long listing format
 
 Pattern matching is performed according to a subset of the Unix rules
-(see below). 
+(see below).
 
 mkdir
 -----

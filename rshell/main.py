@@ -64,7 +64,7 @@ FAKE_INPUT_PROMPT = False
 
 import readline
 import rlcompleter
-if 'libedit' in readline.__doc__:
+if readline.__doc__ and 'libedit' in readline.__doc__:
     readline.parse_and_bind ("bind ^I rl_complete")
     BROKEN_READLINE = True
 else:

@@ -41,7 +41,9 @@ setup(
     install_requires=[
         'pyserial',
         'pyudev >= 0.16',
-    ],
+    ] + ([
+        'pyreadline',
+    ] if 'win' in sys.platform else []),
     entry_points = {
         'console_scripts': [
             'pyboard=rshell.pyboard:main',

@@ -145,14 +145,7 @@ QUIT_REPL_BYTE = bytes((ord(QUIT_REPL_CHAR) - ord('@'),))  # Control-X
 # DELIMS is used by readline for determining word boundaries.
 DELIMS = ' \t\n>;'
 
-# CPython uses Jan 1, 1970 as the epoch, where MicroPython uses Jan 1, 2000
-# as the epoch. TIME_OFFSET is the constant number of seconds needed to
-# convert from one timebase to the other.
-#
-# We use UTC time for doing our conversion because MicroPython doesn't really
-# understand timezones and has no concept of daylight savings time. UTC also
-# doesn't daylight savings time, so this works well.
-TIME_OFFSET = calendar.timegm((2000, 1, 1, 0, 0, 0, 0, 0, 0))
+TIME_OFFSET = 0
 
 DEVS = []
 DEFAULT_DEV = None
@@ -507,6 +500,18 @@ def print_bytes(byte_str):
         print(str(byte_str, encoding='utf8'))
 
 
+def extra_funcs(*funcs):
+  """Decorator which adds extra functions to be downloaded to the pyboard."""
+  def extra_funcs_decorator(real_func):
+    def wrapper(*args, **kwargs):
+      return real_func(*args, **kwargs)
+    wrapper.extra_funcs = [*funcs]
+    wrapper.source = inspect.getsource(real_func)
+    wrapper.name = real_func.__name__
+    return wrapper
+  return extra_funcs_decorator
+
+
 def auto(func, filename, *args, **kwargs):
     """If `filename` is a remote file, then this function calls func on the
        micropython board, otherwise it calls it locally.
@@ -629,19 +634,23 @@ def get_mode(filename):
         return 0
 
 
+def stat(filename):
+    """Returns os.stat for a given file, adjusting the timestamps as appropriate."""
+    import os
+    rstat = os.stat(filename)
+    return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
+
+
+def is_visible(filename):
+    """Determines if the file should be considered to be a non-hidden file."""
+    return filename[0] != '.' and filename[-1] != '~'
+
+
+@extra_funcs(stat)
 def get_stat(filename):
     """Returns the stat array for a given file. Returns all 0's if the file
        doesn't exist.
     """
-    import os
-
-    def stat(filename):
-        rstat = os.stat(filename)
-        if IS_UPY:
-            # Micropython dates are relative to Jan 1, 2000. On the host, time
-            # is relative to Jan 1, 1970.
-            return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
-        return rstat
     try:
         return stat(filename)
     except OSError:
@@ -682,31 +691,21 @@ def listdir_matches(match):
     return matches
 
 
-def listdir_stat(dirname):
+@extra_funcs(is_visible, stat)
+def listdir_stat(dirname, show_hidden=True):
     """Returns a list of tuples for each file contained in the named
        directory, or None if the directory does not exist. Each tuple
        contains the filename, followed by the tuple returned by
        calling os.stat on the filename.
     """
     import os
-
-    def stat(filename):
-        rstat = os.stat(filename)
-        if IS_UPY:
-            # Micropython dates are relative to Jan 1, 2000. On the host, time
-            # is relative to Jan 1, 1970.
-            return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
-        return tuple(rstat) # PGH formerly returned an os.stat_result instance
-
     try:
         files = os.listdir(dirname)
     except OSError:
         return None
-
     if dirname == '/':
-        return list((file, stat('/' + file)) for file in files)
-
-    return list((file, stat(dirname + '/' + file)) for file in files)
+        return list((file, stat('/' + file)) for file in files if is_visible(file) or show_hidden)
+    return list((file, stat(dirname + '/' + file)) for file in files if is_visible(file) or show_hidden)
 
 
 def make_directory(dirname):
@@ -771,7 +770,7 @@ def make_dir(dst_dir, dry_run, print_func, recursed):
     return True
 
 
-def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
+def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
     """Synchronizes 2 directory trees."""
     # This test is a hack to avoid errors when accessing /flash. When the
     # cache synchronisation issue is solved it should be removed
@@ -785,7 +784,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
         return
 
     d_src = {}  # Look up stat tuple from name in current directory
-    src_files = auto(listdir_stat, src_dir)
+    src_files = auto(listdir_stat, src_dir, show_hidden=sync_hidden)
     if src_files is None:
         print_err('Source directory {} does not exist.'.format(src_dir))
         return
@@ -793,7 +792,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
         d_src[name] = stat
 
     d_dst = {}
-    dst_files = auto(listdir_stat, dst_dir)
+    dst_files = auto(listdir_stat, dst_dir, show_hidden=sync_hidden)
     if dst_files is None: # Directory does not exist
         if not recursed:
             print_err('Destination directory {} does not exist.'.format(dst_dir))
@@ -821,7 +820,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
                 cp(src_filename, dst_filename)
         if mode_isdir(src_mode):
             rsync(src_filename, dst_filename, mirror=mirror, dry_run=dry_run,
-                  print_func=print_func, recursed=True)
+                  print_func=print_func, recursed=True, sync_hidden=sync_hidden)
 
     if mirror:  # May delete
         for dst_basename in to_del:  # In dest but not in source
@@ -841,7 +840,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed):
             if mode_isdir(dst_mode):
                 # src and dst are both directories - recurse
                 rsync(src_filename, dst_filename, mirror=mirror, dry_run=dry_run,
-                      print_func=print_func, recursed=True)
+                      print_func=print_func, recursed=True, sync_hidden=sync_hidden)
             else:
                 msg = "Source '{}' is a directory and destination " \
                       "'{}' is a file. Ignoring"
@@ -1051,6 +1050,16 @@ def test_unhexlify():
         return False
 
 
+def get_time_epoch():
+    """Determines the epoch used by the MicroPython board."""
+    import time
+    try:
+      return time.gmtime(0)
+    except:
+      """Assume its a pyboard, with an epoch of 2000."""
+      return (2000, 1, 1, 0, 0, 0, 0, 0)
+
+
 def mode_exists(mode):
     return mode & 0xc000 != 0
 
@@ -1117,23 +1126,13 @@ def decorated_filename(filename, stat):
     return filename
 
 
-def is_hidden(filename):
-    """Determines if the file should be considered to be a "hidden" file."""
-    return filename[0] == '.' or filename[-1] == '~'
-
-
-def is_visible(filename):
-    """Just a helper to hide the double negative."""
-    return not is_hidden(filename)
-
-
 def print_long(filename, stat, print_func):
     """Prints detailed information about the file passed in."""
     size = stat_size(stat)
     mtime = stat_mtime(stat)
-    file_mtime = time.gmtime(mtime)
+    file_mtime = time.localtime(mtime)
     curr_time = time.time()
-    if mtime > curr_time or mtime < (curr_time - SIX_MONTHS):
+    if mtime > (curr_time + SIX_MONTHS) or mtime < (curr_time - SIX_MONTHS):
         print_func('%6d %s %2d %04d  %s' % (size, MONTH[file_mtime[1]],
                                             file_mtime[2], file_mtime[0],
                                             decorated_filename(filename, stat)))
@@ -1258,6 +1257,8 @@ class Device(object):
     def __init__(self, pyb):
         self.pyb = pyb
         self.has_buffer = False  # needs to be set for remote_eval to work
+        self.time_offset = 0
+        self.adjust_for_timezone = False
         if not BINARY_XFER:
             self.has_buffer = self.remote_eval(test_buffer)
         if self.has_buffer:
@@ -1271,6 +1272,13 @@ class Device(object):
         self.root_dirs = ['/{}/'.format(dir) for dir in self.remote_eval(listdir, '/')]
         self.sync_time()
         self.name = self.remote_eval(board_name, self.default_board_name())
+        self.dev_name_short = self.name
+        epoch_tuple = self.remote_eval(get_time_epoch)
+        self.time_offset = calendar.timegm(epoch_tuple)
+        # The pyboard maintains its time as localtime, whereas unix and
+        # esp32 maintain their time as GMT
+        self.adjust_for_timezone = (epoch_tuple[0] != 1970)
+
 
     def check_pyb(self):
         """Raises an error if the pyb object was closed."""
@@ -1282,6 +1290,9 @@ class Device(object):
         if self.pyb and self.pyb.serial:
             self.pyb.serial.close()
         self.pyb = None
+
+    def default_board_name(self):
+        return 'unknown'
 
     def is_root_path(self, filename):
         """Determines if 'filename' corresponds to a directory on this device."""
@@ -1308,33 +1319,46 @@ class Device(object):
         """Calls func with the indicated args on the micropython board."""
         global HAS_BUFFER
         HAS_BUFFER = self.has_buffer
+        if hasattr(func, 'extra_funcs'):
+          func_name = func.name
+          func_lines = []
+          for extra_func in func.extra_funcs:
+            func_lines += inspect.getsource(extra_func).split('\n')
+            func_lines += ['']
+          func_lines += filter(lambda line: line[:1] != '@', func.source.split('\n'))
+          func_src = '\n'.join(func_lines)
+        else:
+          func_name = func.__name__
+          func_src = inspect.getsource(func)
         args_arr = [remote_repr(i) for i in args]
         kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k, v in kwargs.items()]
-        func_str = inspect.getsource(func)
-        func_str += 'output = ' + func.__name__ + '('
-        func_str += ', '.join(args_arr + kwargs_arr)
-        func_str += ')\n'
-        func_str += 'if output is None:\n'
-        func_str += '    print("None")\n'
-        func_str += 'else:\n'
-        func_str += '    print(output)\n'
-        func_str = func_str.replace('TIME_OFFSET', '{}'.format(TIME_OFFSET))
-        func_str = func_str.replace('HAS_BUFFER', '{}'.format(HAS_BUFFER))
-        func_str = func_str.replace('BUFFER_SIZE', '{}'.format(BUFFER_SIZE))
-        func_str = func_str.replace('IS_UPY', 'True')
+        func_src += 'output = ' + func_name + '('
+        func_src += ', '.join(args_arr + kwargs_arr)
+        func_src += ')\n'
+        func_src += 'if output is None:\n'
+        func_src += '    print("None")\n'
+        func_src += 'else:\n'
+        func_src += '    print(output)\n'
+        time_offset = self.time_offset
+        if self.adjust_for_timezone:
+          time_offset -= time.localtime().tm_gmtoff
+        func_src = func_src.replace('TIME_OFFSET', '{}'.format(time_offset))
+        func_src = func_src.replace('HAS_BUFFER', '{}'.format(HAS_BUFFER))
+        func_src = func_src.replace('BUFFER_SIZE', '{}'.format(BUFFER_SIZE))
+        func_src = func_src.replace('IS_UPY', 'True')
         if DEBUG:
-            print('----- About to send %d bytes of code to the pyboard -----' % len(func_str))
-            print(func_str)
+            print('----- About to send %d bytes of code to the pyboard -----' % len(func_src))
+            print(func_src)
             print('-----')
         self.check_pyb()
         try:
             self.pyb.enter_raw_repl()
             self.check_pyb()
-            output = self.pyb.exec_raw_no_follow(func_str)
+            output = self.pyb.exec_raw_no_follow(func_src)
             if xfer_func:
                 xfer_func(self, *args, **kwargs)
             self.check_pyb()
-            output, _ = self.pyb.follow(timeout=10)
+            output, _ = self.pyb.follow(timeout=20)
             self.check_pyb()
             self.pyb.exit_raw_repl()
         except (serial.serialutil.SerialException, TypeError):
@@ -1819,9 +1843,10 @@ class Shell(cmd.Cmd):
                     dirs = []
                 dirs += ['/{}{}'.format(dev.name, dir)[:-1] for dir in dev.root_dirs]
                 dirs = 'Dirs: ' + ' '.join(dirs)
-                rows.append((dev.name, '@ %s' % dev.dev_name_short, dev.status(), dirs))
+                epoch = 'Epoch: {}'.format(time.gmtime(dev.time_offset)[0])
+                rows.append((dev.name, '@ %s' % dev.dev_name_short, dev.status(), epoch, dirs))
         if rows:
-            column_print('<<< ', rows, self.print)
+            column_print('<<<< ', rows, self.print)
         else:
             print('No boards connected')
 
@@ -1981,7 +2006,7 @@ class Shell(cmd.Cmd):
                             return
 
                     rsync(src_filename, dst_filename, mirror=False, dry_run=False,
-                          print_func=lambda *args: None, recursed=False)
+                          print_func=lambda *args: None, recursed=False, sync_hidden=args.all)
                 else:
                     print_err("Omitting directory {}".format(src_filename))
                 continue
@@ -2057,7 +2082,7 @@ class Shell(cmd.Cmd):
         filename = resolve_path(line)
         self.print(auto(get_filesize, filename))
 
-    def complete_filesize(self, text, line, begidx, endidx):
+    def complete_filetype(self, text, line, begidx, endidx):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_filetype(self, line):
@@ -2315,6 +2340,13 @@ class Shell(cmd.Cmd):
 
     argparse_cp = (
         add_arg(
+            '-a', '--all',
+            dest='all',
+            action='store_true',
+            help='Don\'t ignore files starting with .',
+            default=False
+        ),
+        add_arg(
             '-r', '--recursive',
             dest='recursive',
             action='store_true',
@@ -2397,6 +2429,13 @@ class Shell(cmd.Cmd):
 
     argparse_rsync = (
         add_arg(
+            '-a', '--all',
+            dest='all',
+            action='store_true',
+            help='Don\'t ignore files starting with .',
+            default=False
+        ),
+        add_arg(
             '-m', '--mirror',
             dest='mirror',
             action='store_true',
@@ -2442,7 +2481,7 @@ class Shell(cmd.Cmd):
         dst_dir = resolve_path(args.dst_dir)
         pf = print if args.dry_run or args.verbose else lambda *args : None
         rsync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
-             print_func=pf, recursed=False)
+             print_func=pf, recursed=False, sync_hidden=args.all)
 
 
 def real_main():

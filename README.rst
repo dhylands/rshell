@@ -1,7 +1,7 @@
 rshell
 =========
 
-Remote MicroPytyhon shell.
+Remote MicroPython shell.
 
 This is a simple shell which runs on the host and uses MicroPython's
 raw-REPL to send python snippets to the pyboard in order to get

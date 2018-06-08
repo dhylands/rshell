@@ -906,14 +906,16 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
             write_buf = bytearray(buf_size)
             read_buf = bytearray(buf_size)
             while bytes_remaining > 0:
+                # Send back an ack as a form of flow control
+                sys.stdout.write('\x06')
                 read_size = min(bytes_remaining, buf_size)
                 buf_remaining = read_size
                 buf_index = 0
                 while buf_remaining > 0:
                     if HAS_BUFFER:
-                        bytes_read = sys.stdin.buffer.readinto(read_buf, bytes_remaining)
+                        bytes_read = sys.stdin.buffer.readinto(read_buf, read_size)
                     else:
-                        bytes_read = sys.stdin.readinto(read_buf, bytes_remaining)
+                        bytes_read = sys.stdin.readinto(read_buf, read_size)
                     if bytes_read > 0:
                         write_buf[buf_index:bytes_read] = read_buf[0:bytes_read]
                         buf_index += bytes_read
@@ -922,8 +924,6 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
                     dst_file.write(write_buf[0:read_size])
                 else:
                     dst_file.write(ubinascii.unhexlify(write_buf[0:read_size]))
-                # Send back an ack as a form of flow control
-                sys.stdout.write('\x06')
                 bytes_remaining -= read_size
         return True
     except:
@@ -935,7 +935,15 @@ def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
        Matches up with recv_file_from_host.
     """
     bytes_remaining = filesize
+    save_timeout = dev.timeout
+    dev.timeout = 1
     while bytes_remaining > 0:
+        # Wait for ack so we don't get too far ahead of the remote
+        ack = dev.read(1)
+        if ack is None or ack != b'\x06':
+            sys.stderr.write("timed out or error in transfer to remote\n")
+            sys.exit(2)
+
         if HAS_BUFFER:
             buf_size = BUFFER_SIZE
         else:
@@ -948,15 +956,9 @@ def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
             dev.write(buf)
         else:
             dev.write(binascii.hexlify(buf))
-        # Wait for ack so we don't get too far ahead of the remote
-        while True:
-            char = dev.read(1)
-            if char == b'\x06':
-                break
-            # This should only happen if an error occurs
-            sys.stdout.write(chr(ord(char)))
         bytes_remaining -= read_size
     #sys.stdout.write('\r')
+    dev.timeout = save_timeout
 
 
 def recv_file_from_remote(dev, src_filename, dst_file, filesize):
@@ -1465,13 +1467,18 @@ class DeviceSerial(Device):
     def is_serial_port(self, port):
         return self.dev_name_short == port
 
-    def timeout(self, timeout=None):
+    @property
+    def timeout(self):
+        """Gets the timeout associated with the serial port."""
+        self.check_pyb()
+        return self.pyb.serial.timeout
+
+    @timeout.setter
+    def timeout(self, value):
         """Sets the timeout associated with the serial port."""
         self.check_pyb()
-        if timeout is None:
-            return self.pyb.serial.timeout
         try:
-            self.pyb.serial.timeout = timeout
+            self.pyb.serial.timeout = value
         except:
             # timeout is a property so it calls code, and that can fail
             # if the serial port is closed.
@@ -1495,9 +1502,16 @@ class DeviceNet(Device):
     def default_board_name(self):
         return 'wipy'
 
-    def timeout(self, timeout=None):
+    @property
+    def timeout(self):
         """There is no equivalent to timeout for the telnet connection."""
         return None
+
+    @timeout.setter
+    def timeout(self, value):
+        """There is no equivalent to timeout for the telnet connection."""
+        pass
+
 
 class AutoBool(object):
     """A simple class which allows a boolean to be set to False in conjunction

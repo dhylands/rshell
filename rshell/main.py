@@ -2239,12 +2239,13 @@ class Shell(cmd.Cmd):
         """Runs as a thread which has a sole purpose of readding bytes from
            the seril port and writing them to stdout. Used by do_repl.
         """
+        print('repl_serial_to_stdout dev =', dev)
         with self.serial_reader_running:
             try:
-                save_timeout = dev.timeout()
+                save_timeout = dev.timeout
                 # Set a timeout so that the read returns periodically with no data
                 # and allows us to check whether the main thread wants us to quit.
-                dev.timeout(1)
+                dev.timeout = 1
                 while not self.quit_serial_reader:
                     try:
                         char = dev.read(1)
@@ -2269,7 +2270,7 @@ class Shell(cmd.Cmd):
                         continue
                     self.stdout.write(char)
                     self.stdout.flush()
-                dev.timeout(save_timeout)
+                dev.timeout = save_timeout
             except DeviceError:
                 # The device is no longer present.
                 return

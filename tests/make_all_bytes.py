@@ -4,9 +4,11 @@
    characters.
 """
 
+
 def main():
     buf = bytearray(tuple(i for i in range(256)))
     with open('all-bytes.dat', 'wb') as file:
         file.write(buf)
+
 
 main()

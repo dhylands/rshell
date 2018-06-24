@@ -23,13 +23,14 @@ def main():
             print('Length fail ', lens, len(dest_list))
         sys.exit(1)
     for subdir in range(lens):
-        if False in map(lambda str0, str1 : str0 == str1, source_list[subdir], dest_list[subdir]):
+        if False in map(lambda str0, str1: str0 == str1, source_list[subdir], dest_list[subdir]):
             if verbose:
                 print('Subdir fail ', source_list[subdir], dest_list[subdir])
             sys.exit(1)
     if verbose:
         print('Directories match')
     sys.exit(0)
+
 
 if __name__ == '__main__':
     main()

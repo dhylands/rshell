@@ -65,7 +65,7 @@ FAKE_INPUT_PROMPT = False
 import readline
 import rlcompleter
 if 'libedit' in readline.__doc__:
-    readline.parse_and_bind ("bind ^I rl_complete")
+    readline.parse_and_bind("bind ^I rl_complete")
     BROKEN_READLINE = True
 else:
     readline.parse_and_bind("tab: complete")
@@ -153,8 +153,10 @@ DEV_IDX = 1
 
 DEV_LOCK = threading.RLock()
 
+
 def add_device(dev):
-    """Adds a device to the list of devices we know about."""
+    """ Adds a device to the list of devices we know about.
+    """
     global DEV_IDX, DEFAULT_DEV
     with DEV_LOCK:
         for idx in range(len(DEVS)):
@@ -176,7 +178,8 @@ def add_device(dev):
 
 
 def find_device_by_name(name):
-    """Tries to find a board by board name."""
+    """ Tries to find a board by board name.
+    """
     if not name:
         return DEFAULT_DEV
     with DEV_LOCK:
@@ -187,7 +190,8 @@ def find_device_by_name(name):
 
 
 def find_serial_device_by_port(port):
-    """Tries to find a board by port name."""
+    """ Tries to find a board by port name.
+    """
     with DEV_LOCK:
         for dev in DEVS:
             if dev.is_serial_port(port):
@@ -199,8 +203,9 @@ def num_devices():
     with DEV_LOCK:
         return len(DEVS)
 
+
 def is_micropython_usb_device(port):
-    """Checks a USB device to see if it looks like a MicroPython device.
+    """ Checks a USB device to see if it looks like a MicroPython device.
     """
     if type(port).__name__ == 'Device':
         # Assume its a pyudev.device.Device
@@ -222,9 +227,9 @@ def is_micropython_usb_device(port):
 
 
 def autoconnect():
-    """Sets up a thread to detect when USB devices are plugged and unplugged.
-       If the device looks like a MicroPython board, then it will automatically
-       connect to it.
+    """ Sets up a thread to detect when USB devices are plugged and unplugged.
+        If the device looks like a MicroPython board, then it will automatically
+        connect to it.
     """
     if not USE_AUTOCONNECT:
         return
@@ -240,7 +245,8 @@ def autoconnect():
 
 
 def autoconnect_thread(monitor):
-    """Thread which detects USB Serial devices connecting and disconnecting."""
+    """ Thread which detects USB Serial devices connecting and disconnecting.
+    """
     monitor.start()
     monitor.filter_by('tty')
 
@@ -279,8 +285,8 @@ def autoconnect_thread(monitor):
 
 
 def autoscan():
-    """autoscan will check all of the serial ports to see if they have
-       a matching VID:PID for a MicroPython board. If it matches.
+    """ autoscan will check all of the serial ports to see if they have
+        a matching VID:PID for a MicroPython board. If it matches.
     """
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
@@ -288,7 +294,8 @@ def autoscan():
 
 
 def escape(str):
-    """Precede all special characters with a backslash."""
+    """ Precede all special characters with a backslash.
+    """
     out = ''
     for char in str:
         if char in '\\ ':
@@ -298,7 +305,8 @@ def escape(str):
 
 
 def unescape(str):
-    """Undoes the effects of the escape() function."""
+    """ Undoes the effects of the escape() function.
+    """
     out = ''
     prev_backslash = False
     for char in str:
@@ -311,7 +319,8 @@ def unescape(str):
 
 
 def align_cell(fmt, elem, width):
-    """Returns an aligned element."""
+    """ Returns an aligned element.
+    """
     if fmt == "<":
         return elem + ' ' * (width - len(elem))
     if fmt == ">":
@@ -320,11 +329,11 @@ def align_cell(fmt, elem, width):
 
 
 def column_print(fmt, rows, print_func):
-    """Prints a formatted list, adjusting the width so everything fits.
-    fmt contains a single character for each column. < indicates that the
-    column should be left justified, > indicates that the column should
-    be right justified. The last column may be a space which imples left
-    justification and no padding.
+    """ Prints a formatted list, adjusting the width so everything fits.
+        fmt contains a single character for each column. < indicates that the
+        column should be left justified, > indicates that the column should
+        be right justified. The last column may be a space which imples left
+        justification and no padding.
 
     """
     # Figure out the max width of each column
@@ -341,7 +350,8 @@ def column_print(fmt, rows, print_func):
 
 
 def find_macthing_files(match):
-    """Finds all of the files wihch match (used for completion)."""
+    """ Finds all of the files wihch match (used for completion).
+    """
     last_slash = match.rfind('/')
     if last_slash == -1:
         dirname = '.'
@@ -355,14 +365,14 @@ def find_macthing_files(match):
 
 
 def print_err(*args, end='\n'):
-    """Similar to print, but prints to stderr.
+    """ Similar to print, but prints to stderr.
     """
     print(*args, end=end, file=sys.stderr)
     sys.stderr.flush()
 
 
 def is_pattern(s):
-    """Return True if a string contains Unix wildcard pattern characters.
+    """ Return True if a string contains Unix wildcard pattern characters.
     """
     return not set('*?[{').intersection(set(s)) == set()
 
@@ -370,10 +380,11 @@ def is_pattern(s):
 # Disallow patterns like path/t*/bar* because handling them on remote
 # system is difficult without the glob library.
 def parse_pattern(s):
-    """Parse a string such as 'foo/bar/*.py'
-    Assumes is_pattern(s) has been called and returned True
-    1. directory to process
-    2. pattern to match"""
+    """ Parse a string such as 'foo/bar/*.py'
+        Assumes is_pattern(s) has been called and returned True
+        1. directory to process
+        2. pattern to match
+    """
     if '{' in s:
         return None, None  # Unsupported by fnmatch
     if s and s[0] == '~':
@@ -388,17 +399,17 @@ def parse_pattern(s):
     else:
         directory = '/'.join(parts[:-1])
         pattern = parts[-1]
-    if not is_pattern(directory): # Check for e.g. /abc/*/def
+    if not is_pattern(directory):  # Check for e.g. /abc/*/def
         if is_pattern(pattern):
             if not directory:
                 directory = '/' if absolute else '.'
             return directory, pattern
-    return None, None # Invalid or nonexistent pattern
+    return None, None  # Invalid or nonexistent pattern
 
 
 def validate_pattern(fn):
-    """On success return an absolute path and a pattern.
-    Otherwise print a message and return None, None
+    """ On success return an absolute path and a pattern.
+        Otherwise print a message and return None, None
     """
     directory, pattern = parse_pattern(fn)
     if directory is None:
@@ -416,7 +427,7 @@ def validate_pattern(fn):
 
 
 def process_pattern(fn):
-    """Return a list of paths matching a pattern (or None on error).
+    """ Return a list of paths matching a pattern (or None on error).
     """
     directory, pattern = validate_pattern(fn)
     if directory is not None:
@@ -428,7 +439,8 @@ def process_pattern(fn):
 
 
 def resolve_path(path):
-    """Resolves path and converts it into an absolute path."""
+    """ Resolves path and converts it into an absolute path.
+    """
     if path[0] == '~':
         # ~ or ~user
         path = os.path.expanduser(path)
@@ -457,18 +469,18 @@ def resolve_path(path):
 
 
 def get_dev_and_path(filename):
-    """Determines if a given file is located locally or remotely. We assume
-       that any directories from the pyboard take precendence over local
-       directories of the same name. /flash and /sdcard are associated with
-       the default device. /dev_name/path where dev_name is the name of a
-       given device is also considered to be associaed with the named device.
+    """ Determines if a given file is located locally or remotely. We assume
+        that any directories from the pyboard take precendence over local
+        directories of the same name. /flash and /sdcard are associated with
+        the default device. /dev_name/path where dev_name is the name of a
+        given device is also considered to be associaed with the named device.
 
-       If the file is associated with a remote device, then this function
-       returns a tuple (dev, dev_filename) where dev is the device and
-       dev_filename is the portion of the filename relative to the device.
+        If the file is associated with a remote device, then this function
+        returns a tuple (dev, dev_filename) where dev is the device and
+        dev_filename is the portion of the filename relative to the device.
 
-       If the file is not associated with the remote device, then the dev
-       portion of the returned tuple will be None.
+        If the file is not associated with the remote device, then the dev
+        portion of the returned tuple will be None.
     """
     if DEFAULT_DEV:
         if DEFAULT_DEV.is_root_path(filename):
@@ -485,7 +497,8 @@ def get_dev_and_path(filename):
 
 
 def remote_repr(i):
-    """Helper function to deal with types which we can't send to the pyboard."""
+    """ Helper function to deal with types which we can't send to the pyboard.
+    """
     repr_str = repr(i)
     if repr_str and repr_str[0] == '<':
         return 'None'
@@ -493,7 +506,8 @@ def remote_repr(i):
 
 
 def print_bytes(byte_str):
-    """Prints a string or converts bytes to a string and then prints."""
+    """ Prints a string or converts bytes to a string and then prints.
+    """
     if isinstance(byte_str, str):
         print(byte_str)
     else:
@@ -501,20 +515,21 @@ def print_bytes(byte_str):
 
 
 def extra_funcs(*funcs):
-  """Decorator which adds extra functions to be downloaded to the pyboard."""
-  def extra_funcs_decorator(real_func):
-    def wrapper(*args, **kwargs):
-      return real_func(*args, **kwargs)
-    wrapper.extra_funcs = [*funcs]
-    wrapper.source = inspect.getsource(real_func)
-    wrapper.name = real_func.__name__
-    return wrapper
-  return extra_funcs_decorator
+    """ Decorator which adds extra functions to be downloaded to the pyboard.
+    """
+    def extra_funcs_decorator(real_func):
+        def wrapper(*args, **kwargs):
+            return real_func(*args, **kwargs)
+        wrapper.extra_funcs = [*funcs]
+        wrapper.source = inspect.getsource(real_func)
+        wrapper.name = real_func.__name__
+        return wrapper
+    return extra_funcs_decorator
 
 
 def auto(func, filename, *args, **kwargs):
-    """If `filename` is a remote file, then this function calls func on the
-       micropython board, otherwise it calls it locally.
+    """ If `filename` is a remote file, then this function calls func on the
+        micropython board, otherwise it calls it locally.
     """
     dev, dev_filename = get_dev_and_path(filename)
     if dev is None:
@@ -525,7 +540,8 @@ def auto(func, filename, *args, **kwargs):
 
 
 def board_name(default):
-    """Returns the boards name (if available)."""
+    """ Returns the boards name (if available).
+    """
     try:
         import board
         name = board.name
@@ -535,7 +551,8 @@ def board_name(default):
 
 
 def cat(src_filename, dst_file):
-    """Copies the contents of the indicated file to an already opened file."""
+    """ Copies the contents of the indicated file to an already opened file.
+    """
     (dev, dev_filename) = get_dev_and_path(src_filename)
     if dev is None:
         with open(dev_filename, 'rb') as txtfile:
@@ -546,15 +563,17 @@ def cat(src_filename, dst_file):
         return dev.remote(send_file_to_host, dev_filename, dst_file, filesize,
                           xfer_func=recv_file_from_remote)
 
+
 def chdir(dirname):
-    """Changes the current working directory."""
+    """ Changes the current working directory.
+    """
     import os
     os.chdir(dirname)
 
 
 def copy_file(src_filename, dst_filename):
-    """Copies a file from one place to another. Both the source and destination
-       files must exist on the same machine.
+    """ Copies a file from one place to another. Both the source and destination
+        files must exist on the same machine.
     """
     try:
         with open(src_filename, 'rb') as src_file:
@@ -571,8 +590,8 @@ def copy_file(src_filename, dst_filename):
 
 
 def cp(src_filename, dst_filename):
-    """Copies one file to another. The source file may be local or remote and
-       the destnation file may be local or remote.
+    """ Copies one file to another. The source file may be local or remote and
+        the destnation file may be local or remote.
     """
     src_dev, src_dev_filename = get_dev_and_path(src_filename)
     dst_dev, dst_dev_filename = get_dev_and_path(dst_filename)
@@ -605,13 +624,15 @@ def cp(src_filename, dst_filename):
 
 
 def eval_str(string):
-    """Executes a string containing python code."""
+    """ Executes a string containing python code.
+    """
     output = eval(string)
     return output
 
 
 def get_filesize(filename):
-    """Returns the size of a file, in bytes."""
+    """ Returns the size of a file, in bytes.
+    """
     import os
     try:
         # Since this function runs remotely, it can't depend on other functions,
@@ -622,8 +643,8 @@ def get_filesize(filename):
 
 
 def get_mode(filename):
-    """Returns the mode of a file, which can be used to determine if a file
-       exists, if a file is a file or a directory.
+    """ Returns the mode of a file, which can be used to determine if a file
+        exists, if a file is a file or a directory.
     """
     import os
     try:
@@ -635,21 +656,23 @@ def get_mode(filename):
 
 
 def stat(filename):
-    """Returns os.stat for a given file, adjusting the timestamps as appropriate."""
+    """ Returns os.stat for a given file, adjusting the timestamps as appropriate.
+    """
     import os
     rstat = os.stat(filename)
     return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
 
 
 def is_visible(filename):
-    """Determines if the file should be considered to be a non-hidden file."""
+    """ Determines if the file should be considered to be a non-hidden file.
+    """
     return filename[0] != '.' and filename[-1] != '~'
 
 
 @extra_funcs(stat)
 def get_stat(filename):
-    """Returns the stat array for a given file. Returns all 0's if the file
-       doesn't exist.
+    """ Returns the stat array for a given file. Returns all 0's if the file
+        doesn't exist.
     """
     try:
         return stat(filename)
@@ -658,15 +681,16 @@ def get_stat(filename):
 
 
 def listdir(dirname):
-    """Returns a list of filenames contained in the named directory."""
+    """ Returns a list of filenames contained in the named directory.
+    """
     import os
     return os.listdir(dirname)
 
 
 def listdir_matches(match):
-    """Returns a list of filenames contained in the named directory.
-       Only filenames which start with `match` will be returned.
-       Directories will have a trailing slash.
+    """ Returns a list of filenames contained in the named directory.
+        Only filenames which start with `match` will be returned.
+        Directories will have a trailing slash.
     """
     import os
     last_slash = match.rfind('/')
@@ -693,10 +717,10 @@ def listdir_matches(match):
 
 @extra_funcs(is_visible, stat)
 def listdir_stat(dirname, show_hidden=True):
-    """Returns a list of tuples for each file contained in the named
-       directory, or None if the directory does not exist. Each tuple
-       contains the filename, followed by the tuple returned by
-       calling os.stat on the filename.
+    """ Returns a list of tuples for each file contained in the named
+        directory, or None if the directory does not exist. Each tuple
+        contains the filename, followed by the tuple returned by
+        calling os.stat on the filename.
     """
     import os
     try:
@@ -709,7 +733,8 @@ def listdir_stat(dirname, show_hidden=True):
 
 
 def make_directory(dirname):
-    """Creates one or more directories."""
+    """ Creates one or more directories.
+    """
     import os
     try:
         os.mkdir(dirname)
@@ -719,12 +744,14 @@ def make_directory(dirname):
 
 
 def mkdir(filename):
-    """Creates a directory."""
+    """ Creates a directory.
+    """
     return auto(make_directory, filename)
 
 
 def remove_file(filename, recursive=False, force=False):
-    """Removes a file or directory."""
+    """ Removes a file or directory.
+    """
     import os
     try:
         mode = os.stat(filename)[0]
@@ -735,7 +762,7 @@ def remove_file(filename, recursive=False, force=False):
                     success = remove_file(filename + '/' + file, recursive, force)
                     if not success and not force:
                         return False
-                os.rmdir(filename) # PGH Work like Unix: require recursive
+                os.rmdir(filename)  # PGH Work like Unix: require recursive
             else:
                 if not force:
                     return False
@@ -748,18 +775,19 @@ def remove_file(filename, recursive=False, force=False):
 
 
 def rm(filename, recursive=False, force=False):
-    """Removes a file or directory tree."""
+    """ Removes a file or directory tree.
+    """
     return auto(remove_file, filename, recursive, force)
 
 
 def make_dir(dst_dir, dry_run, print_func, recursed):
-    """Creates a directory. Produces information in case of dry run.
-    Isues error where necessary.
+    """ Creates a directory. Produces information in case of dry run.
+        Isues error where necessary.
     """
-    parent = os.path.split(dst_dir.rstrip('/'))[0] # Check for nonexistent parent
-    parent_files = auto(listdir_stat, parent) if parent else True # Relative dir
+    parent = os.path.split(dst_dir.rstrip('/'))[0]  # Check for nonexistent parent
+    parent_files = auto(listdir_stat, parent) if parent else True  # Relative dir
     if dry_run:
-        if recursed: # Assume success: parent not actually created yet
+        if recursed:  # Assume success: parent not actually created yet
             print_func("Creating directory {}".format(dst_dir))
         elif parent_files is None:
             print_func("Unable to create {}".format(dst_dir))
@@ -771,7 +799,8 @@ def make_dir(dst_dir, dry_run, print_func, recursed):
 
 
 def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
-    """Synchronizes 2 directory trees."""
+    """ Synchronizes 2 directory trees.
+    """
     # This test is a hack to avoid errors when accessing /flash. When the
     # cache synchronisation issue is solved it should be removed
     if not isinstance(src_dir, str) or not len(src_dir):
@@ -793,13 +822,13 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
 
     d_dst = {}
     dst_files = auto(listdir_stat, dst_dir, show_hidden=sync_hidden)
-    if dst_files is None: # Directory does not exist
+    if dst_files is None:  # Directory does not exist
         if not recursed:
             print_err('Destination directory {} does not exist.'.format(dst_dir))
             return
         if not make_dir(dst_dir, dry_run, print_func, recursed):
             return
-    else: # dest exists
+    else:  # dest exists
         for name, stat in dst_files:
             d_dst[name] = stat
 
@@ -807,7 +836,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
     set_src = set(d_src.keys())
     to_add = set_src - set_dst  # Files to copy to dest
     to_del = set_dst - set_src  # To delete from dest
-    to_upd = set_dst.intersection(set_src) # In both: may need updating
+    to_upd = set_dst.intersection(set_src)  # In both: may need updating
 
     for src_basename in to_add:  # Name in source but absent from destination
         src_filename = src_dir + '/' + src_basename
@@ -879,7 +908,8 @@ def set_time(rtc_time):
 # to use hexlify in order to get unaltered data.
 
 def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
-    """Function which runs on the pyboard. Matches up with send_file_to_remote."""
+    """ Function which runs on the pyboard. Matches up with send_file_to_remote.
+    """
     import sys
     import ubinascii
     if HAS_BUFFER:
@@ -931,8 +961,8 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
 
 
 def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
-    """Intended to be passed to the `remote` function as the xfer_func argument.
-       Matches up with recv_file_from_host.
+    """ Intended to be passed to the `remote` function as the xfer_func argument.
+        Matches up with recv_file_from_host.
     """
     bytes_remaining = filesize
     save_timeout = dev.timeout
@@ -950,20 +980,20 @@ def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
             buf_size = BUFFER_SIZE // 2
         read_size = min(bytes_remaining, buf_size)
         buf = src_file.read(read_size)
-        #sys.stdout.write('\r%d/%d' % (filesize - bytes_remaining, filesize))
-        #sys.stdout.flush()
+        # sys.stdout.write('\r%d/%d' % (filesize - bytes_remaining, filesize))
+        # sys.stdout.flush()
         if HAS_BUFFER:
             dev.write(buf)
         else:
             dev.write(binascii.hexlify(buf))
         bytes_remaining -= read_size
-    #sys.stdout.write('\r')
+    # sys.stdout.write('\r')
     dev.timeout = save_timeout
 
 
 def recv_file_from_remote(dev, src_filename, dst_file, filesize):
-    """Intended to be passed to the `remote` function as the xfer_func argument.
-       Matches up with send_file_to_host.
+    """ Intended to be passed to the `remote` function as the xfer_func argument.
+        Matches up with send_file_to_host.
     """
     bytes_remaining = filesize
     if not HAS_BUFFER:
@@ -991,7 +1021,8 @@ def recv_file_from_remote(dev, src_filename, dst_file, filesize):
 
 
 def send_file_to_host(src_filename, dst_file, filesize):
-    """Function which runs on the pyboard. Matches up with recv_file_from_remote."""
+    """ Function which runs on the pyboard. Matches up with recv_file_from_remote.
+    """
     import sys
     import ubinascii
     try:
@@ -1023,7 +1054,8 @@ def send_file_to_host(src_filename, dst_file, filesize):
 
 
 def test_buffer():
-    """Checks the micropython firmware to see if sys.stdin.buffer exists."""
+    """ Checks the micropython firmware to see if sys.stdin.buffer exists.
+    """
     import sys
     try:
         _ = sys.stdin.buffer
@@ -1033,7 +1065,8 @@ def test_buffer():
 
 
 def test_readinto():
-    """Checks the micropython firmware to see if sys.stdin.readinto exists."""
+    """ Checks the micropython firmware to see if sys.stdin.readinto exists.
+    """
     import sys
     try:
         _ = sys.stdin.readinto
@@ -1043,7 +1076,8 @@ def test_readinto():
 
 
 def test_unhexlify():
-    """Checks the micropython firmware to see if ubinascii.unhexlify exists."""
+    """ Checks the micropython firmware to see if ubinascii.unhexlify exists.
+    """
     import ubinascii
     try:
         _ = ubinascii.unhexlify
@@ -1053,13 +1087,14 @@ def test_unhexlify():
 
 
 def get_time_epoch():
-    """Determines the epoch used by the MicroPython board."""
+    """ Determines the epoch used by the MicroPython board.
+    """
     import time
     try:
-      return time.gmtime(0)
+        return time.gmtime(0)
     except:
-      """Assume its a pyboard, with an epoch of 2000."""
-      return (2000, 1, 1, 0, 0, 0, 0, 0)
+        """Assume its a pyboard, with an epoch of 2000."""
+        return (2000, 1, 1, 0, 0, 0, 0, 0)
 
 
 def mode_exists(mode):
@@ -1075,30 +1110,34 @@ def mode_isfile(mode):
 
 
 def stat_mode(stat):
-    """Returns the mode field from the results returne by os.stat()."""
+    """ Returns the mode field from the results returne by os.stat().
+    """
     return stat[0]
 
 
 def stat_size(stat):
-    """Returns the filesize field from the results returne by os.stat()."""
+    """ Returns the filesize field from the results returne by os.stat().
+    """
     return stat[6]
 
 
 def stat_mtime(stat):
-    """Returns the mtime field from the results returne by os.stat()."""
+    """ Returns the mtime field from the results returne by os.stat().
+    """
     return stat[8]
 
 
 def word_len(word):
-    """Returns the word lenght, minus any color codes."""
+    """ Returns the word lenght, minus any color codes.
+    """
     if word[0] == '\x1b':
         return len(word) - 11   # 7 for color, 4 for no-color
     return len(word)
 
 
 def print_cols(words, print_func, termwidth=79):
-    """Takes a single column of words, and prints it as multiple columns that
-    will fit in termwidth columns.
+    """ Takes a single column of words, and prints it as multiple columns that
+        will fit in termwidth columns.
     """
     width = max([word_len(word) for word in words])
     nwords = len(words)
@@ -1116,9 +1155,9 @@ def print_cols(words, print_func, termwidth=79):
 
 
 def decorated_filename(filename, stat):
-    """Takes a filename and the stat info and returns the decorated filename.
-       The decoration takes the form of a single character which follows
-       the filename. Currently, the only decodation is '/' for directories.
+    """ Takes a filename and the stat info and returns the decorated filename.
+        The decoration takes the form of a single character which follows
+        the filename. Currently, the only decodation is '/' for directories.
     """
     mode = stat[0]
     if mode_isdir(mode):
@@ -1129,7 +1168,8 @@ def decorated_filename(filename, stat):
 
 
 def print_long(filename, stat, print_func):
-    """Prints detailed information about the file passed in."""
+    """ Prints detailed information about the file passed in.
+    """
     size = stat_size(stat)
     mtime = stat_mtime(stat)
     file_mtime = time.localtime(mtime)
@@ -1145,9 +1185,9 @@ def print_long(filename, stat, print_func):
 
 
 def trim(docstring):
-    """Trims the leading spaces from docstring comments.
+    """ Trims the leading spaces from docstring comments.
 
-    From http://www.python.org/dev/peps/pep-0257/
+        From http://www.python.org/dev/peps/pep-0257/
 
     """
     if not docstring:
@@ -1176,24 +1216,27 @@ def trim(docstring):
 
 
 def add_arg(*args, **kwargs):
-    """Returns a list containing args and kwargs."""
+    """ Returns a list containing args and kwargs.
+    """
     return (args, kwargs)
 
 
 def connect(port, baud=115200, user='micro', password='python', wait=0):
-    """Tries to connect automagically vie network or serial."""
+    """ Tries to connect automagically vie network or serial.
+    """
     try:
         ip_address = socket.gethostbyname(port)
-        #print('Connecting to ip', ip_address)
+        # print('Connecting to ip', ip_address)
         connect_telnet(port, ip_address, user=user, password=password)
     except socket.gaierror:
         # Doesn't look like a hostname or IP-address, assume its a serial port
-        #print('connecting to serial', port)
+        # print('connecting to serial', port)
         connect_serial(port, baud=baud, wait=wait)
 
 
 def connect_telnet(name, ip_address=None, user='micro', password='python'):
-    """Connect to a MicroPython board via telnet."""
+    """ Connect to a MicroPython board via telnet.
+    """
     if ip_address is None:
         try:
             ip_address = socket.gethostbyname(name)
@@ -1209,7 +1252,8 @@ def connect_telnet(name, ip_address=None, user='micro', password='python'):
 
 
 def connect_serial(port, baud=115200, wait=0):
-    """Connect to a MicroPython board via a serial port."""
+    """ Connect to a MicroPython board via a serial port.
+    """
     if not QUIET:
         print('Connecting to %s ...' % port)
     try:
@@ -1223,7 +1267,8 @@ def connect_serial(port, baud=115200, wait=0):
 
 
 class SmartFile(object):
-    """Class which implements a write method which can takes bytes or str."""
+    """ Class which implements a write method which can takes bytes or str.
+    """
 
     def __init__(self, file):
         self.file = file
@@ -1250,7 +1295,8 @@ class SmartFile(object):
 
 
 class DeviceError(Exception):
-    """Errors that we want to report to the user and keep running."""
+    """ Errors that we want to report to the user and keep running.
+    """
     pass
 
 
@@ -1281,14 +1327,15 @@ class Device(object):
         # esp32 maintain their time as GMT
         self.adjust_for_timezone = (epoch_tuple[0] != 1970)
 
-
     def check_pyb(self):
-        """Raises an error if the pyb object was closed."""
+        """ Raises an error if the pyb object was closed.
+        """
         if self.pyb is None:
             raise DeviceError('serial port %s closed' % self.dev_name_short)
 
     def close(self):
-        """Closes the serial port."""
+        """ Closes the serial port.
+        """
         if self.pyb and self.pyb.serial:
             self.pyb.serial.close()
         self.pyb = None
@@ -1297,7 +1344,8 @@ class Device(object):
         return 'unknown'
 
     def is_root_path(self, filename):
-        """Determines if 'filename' corresponds to a directory on this device."""
+        """ Determines if 'filename' corresponds to a directory on this device.
+        """
         test_filename = filename + '/'
         for root_dir in self.root_dirs:
             if test_filename.startswith(root_dir):
@@ -1308,7 +1356,8 @@ class Device(object):
         return False
 
     def read(self, num_bytes):
-        """Reads data from the pyboard over the serial port."""
+        """ Reads data from the pyboard over the serial port.
+        """
         self.check_pyb()
         try:
             return self.pyb.serial.read(num_bytes)
@@ -1318,20 +1367,21 @@ class Device(object):
             raise DeviceError('serial port %s closed' % self.dev_name_short)
 
     def remote(self, func, *args, xfer_func=None, **kwargs):
-        """Calls func with the indicated args on the micropython board."""
+        """ Calls func with the indicated args on the micropython board.
+        """
         global HAS_BUFFER
         HAS_BUFFER = self.has_buffer
         if hasattr(func, 'extra_funcs'):
-          func_name = func.name
-          func_lines = []
-          for extra_func in func.extra_funcs:
-            func_lines += inspect.getsource(extra_func).split('\n')
-            func_lines += ['']
-          func_lines += filter(lambda line: line[:1] != '@', func.source.split('\n'))
-          func_src = '\n'.join(func_lines)
+            func_name = func.name
+            func_lines = []
+            for extra_func in func.extra_funcs:
+                func_lines += inspect.getsource(extra_func).split('\n')
+                func_lines += ['']
+            func_lines += filter(lambda line: line[:1] != '@', func.source.split('\n'))
+            func_src = '\n'.join(func_lines)
         else:
-          func_name = func.__name__
-          func_src = inspect.getsource(func)
+            func_name = func.__name__
+            func_src = inspect.getsource(func)
         args_arr = [remote_repr(i) for i in args]
         kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k, v in kwargs.items()]
         func_src += 'output = ' + func_name + '('
@@ -1343,7 +1393,7 @@ class Device(object):
         func_src += '    print(output)\n'
         time_offset = self.time_offset
         if self.adjust_for_timezone:
-          time_offset -= time.localtime().tm_gmtoff
+            time_offset -= time.localtime().tm_gmtoff
         func_src = func_src.replace('TIME_OFFSET', '{}'.format(time_offset))
         func_src = func_src.replace('HAS_BUFFER', '{}'.format(HAS_BUFFER))
         func_src = func_src.replace('BUFFER_SIZE', '{}'.format(BUFFER_SIZE))
@@ -1373,27 +1423,29 @@ class Device(object):
         return output
 
     def remote_eval(self, func, *args, **kwargs):
-        """Calls func with the indicated args on the micropython board, and
-           converts the response back into python by using eval.
+        """ Calls func with the indicated args on the micropython board, and
+            converts the response back into python by using eval.
         """
         return eval(self.remote(func, *args, **kwargs))
 
     def status(self):
-        """Returns a status string to indicate whether we're connected to
-           the pyboard or not.
+        """ Returns a status string to indicate whether we're connected to
+            the pyboard or not.
         """
         if self.pyb is None:
             return 'closed'
         return 'connected'
 
     def sync_time(self):
-        """Sets the time on the pyboard to match the time on the host."""
+        """ Sets the time on the pyboard to match the time on the host.
+        """
         now = time.localtime(time.time())
         self.remote(set_time, (now.tm_year, now.tm_mon, now.tm_mday, now.tm_wday + 1,
                                now.tm_hour, now.tm_min, now.tm_sec, 0))
 
     def write(self, buf):
-        """Writes data to the pyboard over the serial port."""
+        """ Writes data to the pyboard over the serial port.
+        """
         self.check_pyb()
         try:
             return self.pyb.serial.write(buf)
@@ -1469,13 +1521,15 @@ class DeviceSerial(Device):
 
     @property
     def timeout(self):
-        """Gets the timeout associated with the serial port."""
+        """ Gets the timeout associated with the serial port.
+        """
         self.check_pyb()
         return self.pyb.serial.timeout
 
     @timeout.setter
     def timeout(self, value):
-        """Sets the timeout associated with the serial port."""
+        """ Sets the timeout associated with the serial port.
+        """
         self.check_pyb()
         try:
             self.pyb.serial.timeout = value
@@ -1504,18 +1558,20 @@ class DeviceNet(Device):
 
     @property
     def timeout(self):
-        """There is no equivalent to timeout for the telnet connection."""
+        """ There is no equivalent to timeout for the telnet connection.
+        """
         return None
 
     @timeout.setter
     def timeout(self, value):
-        """There is no equivalent to timeout for the telnet connection."""
+        """ There is no equivalent to timeout for the telnet connection.
+        """
         pass
 
 
 class AutoBool(object):
-    """A simple class which allows a boolean to be set to False in conjunction
-       with a with: statement.
+    """ A simple class which allows a boolean to be set to False in conjunction
+        with a with: statement.
     """
 
     def __init__(self):
@@ -1532,12 +1588,14 @@ class AutoBool(object):
 
 
 class ShellError(Exception):
-    """Errors that we want to report to the user and keep running."""
+    """ Errors that we want to report to the user and keep running.
+    """
     pass
 
 
 class Shell(cmd.Cmd):
-    """Implements the shell as a command line interpreter."""
+    """ Implements the shell as a command line interpreter.
+    """
 
     def __init__(self, filename=None, timing=False, **kwargs):
         cmd.Cmd.__init__(self, **kwargs)
@@ -1589,11 +1647,11 @@ class Shell(cmd.Cmd):
             cmd.Cmd.cmdloop(self)
 
     def onecmd(self, line):
-        """Override onecmd.
+        """ Override onecmd.
 
-        1 - So we don't have to have a do_EOF method.
-        2 - So we can strip comments
-        3 - So we can track line numbers
+            1 - So we don't have to have a do_EOF method.
+            2 - So we can strip comments
+            3 - So we can track line numbers
         """
         if DEBUG:
             print('Executing "%s"' % line)
@@ -1642,11 +1700,11 @@ class Shell(cmd.Cmd):
         print_err("Unrecognized command:", line)
 
     def emptyline(self):
-        """We want empty lines to do nothing. By default they would repeat the
-        previous command.
-
+        """ We want empty lines to do nothing. By default they would repeat the
+            previous command.
         """
         pass
+
     def precmd(self, line):
         self.stdout = self.smart_stdout
         return line
@@ -1672,8 +1730,8 @@ class Shell(cmd.Cmd):
         return stop
 
     def print(self, *args, end='\n', file=None):
-        """Convenience function so you don't need to remember to put the \n
-           at the end of the line.
+        """ Convenience function so you don't need to remember to put the '\n'
+            at the end of the line.
         """
         if file is None:
             file = self.stdout
@@ -1703,8 +1761,8 @@ class Shell(cmd.Cmd):
         return parser
 
     def filename_complete(self, text, line, begidx, endidx):
-        """Wrapper for catching exceptions since cmd seems to silently
-           absorb them.
+        """ Wrapper for catching exceptions since cmd seems to silently
+            absorb them.
         """
         try:
             return self.real_filename_complete(text, line, begidx, endidx)
@@ -1712,8 +1770,8 @@ class Shell(cmd.Cmd):
             traceback.print_exc()
 
     def real_filename_complete(self, text, line, begidx, endidx):
-        """Figure out what filenames match the completion."""
-
+        """ Figure out what filenames match the completion.
+        """
         # line contains the full command line that's been entered so far.
         # text contains the portion of the line that readline is trying to complete
         # text should correspond to line[begidx:endidx]
@@ -1736,8 +1794,8 @@ class Shell(cmd.Cmd):
         # When we return a list of completions, the bit that we return should
         # just be the portion that we replace 'text' with.
 
-        fixed = unescape(line[before_match+1:begidx]) # fixed portion of the match
-        match = unescape(line[before_match+1:endidx]) # portion to match filenames against
+        fixed = unescape(line[before_match+1:begidx])  # fixed portion of the match
+        match = unescape(line[before_match+1:endidx])  # portion to match filenames against
 
         # We do the following to cover the case that the current directory
         # is / and the path being entered is relative.
@@ -1783,12 +1841,13 @@ class Shell(cmd.Cmd):
         return completions
 
     def directory_complete(self, text, line, begidx, endidx):
-        """Figure out what directories match the completion."""
+        """ Figure out what directories match the completion.
+        """
         return [filename for filename in self.filename_complete(text, line, begidx, endidx) if filename[-1] == '/']
 
     def line_to_args(self, line):
-        """This will convert the line passed into the do_xxx functions into
-        an array of arguments and handle the Output Redirection Operator.
+        """ This will convert the line passed into the do_xxx functions into
+            an array of arguments and handle the Output Redirection Operator.
         """
         args = line.split()
         self.redirect_filename = ''
@@ -1834,19 +1893,19 @@ class Shell(cmd.Cmd):
         return args
 
     def do_args(self, line):
-        """args [arguments...]
+        """ args [arguments...]
 
-           Debug function for verifying argument parsing. This function just
-           prints out each argument that it receives.
+            Debug function for verifying argument parsing. This function just
+            prints out each argument that it receives.
         """
         args = self.line_to_args(line)
         for idx in range(len(args)):
             self.print("arg[%d] = '%s'" % (idx, args[idx]))
 
     def do_boards(self, _):
-        """boards
+        """ boards
 
-           Lists the boards that rshell is currently connected to.
+            Lists the boards that rshell is currently connected to.
         """
         rows = []
         with DEV_LOCK:
@@ -1868,9 +1927,9 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_cat(self, line):
-        """cat FILENAME...
+        """ cat FILENAME...
 
-           Concatinates files and sends to stdout.
+            Concatinates files and sends to stdout.
         """
         # note: when we get around to supporting cat from stdin, we'll need
         #       to write stdin to a temp file, and then copy the file
@@ -1891,10 +1950,10 @@ class Shell(cmd.Cmd):
         return self.directory_complete(text, line, begidx, endidx)
 
     def do_cd(self, line):
-        """cd DIRECTORY
+        """ cd DIRECTORY
 
-           Changes the current directory. ~ expansion is supported, and cd -
-           goes to the previous directory.
+            Changes the current directory. ~ expansion is supported, and cd -
+            goes to the previous directory.
         """
         args = self.line_to_args(line)
         if len(args) == 0:
@@ -1916,11 +1975,11 @@ class Shell(cmd.Cmd):
             print_err("Directory '%s' does not exist" % dirname)
 
     def do_connect(self, line):
-        """connect TYPE TYPE_PARAMS
-           connect serial port [baud]
-           connect telnet ip-address-or-name
+        """ connect TYPE TYPE_PARAMS
+            connect serial port [baud]
+            connect telnet ip-address-or-name
 
-           Connects a pyboard to rshell.
+            Connects a pyboard to rshell.
         """
         args = self.line_to_args(line)
         num_args = len(args)
@@ -1955,16 +2014,16 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_cp(self, line):
-        """cp SOURCE DEST               Copy a single SOURCE file to DEST file.
-       cp SOURCE... DIRECTORY       Copy multiple SOURCE files to a directory.
-       cp [-r|--recursive] [SOURCE|SOURCE_DIR]... DIRECTORY
-       cp [-r] PATTERN DIRECTORY    Copy matching files to DIRECTORY.
+        """ cp SOURCE DEST               Copy a single SOURCE file to DEST file.
+            cp SOURCE... DIRECTORY       Copy multiple SOURCE files to a directory.
+            cp [-r|--recursive] [SOURCE|SOURCE_DIR]... DIRECTORY
+            cp [-r] PATTERN DIRECTORY    Copy matching files to DIRECTORY.
 
-           The destination must be a directory except in the case of
-           copying a single file. To copy directories -r must be specified.
-           This will cause directories and their contents to be recursively
-           copied.
-       """
+            The destination must be a directory except in the case of
+            copying a single file. To copy directories -r must be specified.
+            This will cause directories and their contents to be recursively
+            copied.
+        """
         args = self.line_to_args(line)
         if len(args.filenames) < 2:
             print_err('Missing destination file')
@@ -2003,7 +2062,7 @@ class Shell(cmd.Cmd):
                 print_err("File '{}' doesn't exist".format(src_filename))
                 return
             if mode_isdir(src_mode):
-                if args.recursive: # Copying a directory
+                if args.recursive:  # Copying a directory
                     src_basename = os.path.basename(src_filename)
                     dst_filename = dst_dirname + '/' + src_basename
                     if src_basename in d_dst:
@@ -2034,9 +2093,9 @@ class Shell(cmd.Cmd):
                 break
 
     def do_echo(self, line):
-        """echo TEXT...
+        """ echo TEXT...
 
-           Display a line of text.
+            Display a line of text.
         """
         args = self.line_to_args(line)
         self.print(*args)
@@ -2045,15 +2104,15 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_edit(self, line):
-        """edit FILE
+        """ edit FILE
 
-           Copies the file locally, launches an editor to edit the file.
-           When the editor exits, if the file was modified then its copied
-           back.
+            Copies the file locally, launches an editor to edit the file.
+            When the editor exits, if the file was modified then its copied
+            back.
 
-           You can specify the editor used with the --editor command line
-           option when you start rshell, or by using the VISUAL or EDITOR
-           environment variable. if none of those are set, then vi will be used.
+            You can specify the editor used with the --editor command line
+            option when you start rshell, or by using the VISUAL or EDITOR
+            environment variable. if none of those are set, then vi will be used.
         """
         if len(line) == 0:
             print_err("Must provide a filename")
@@ -2085,10 +2144,10 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_filesize(self, line):
-        """filesize FILE
+        """ filesize FILE
 
-           Prints the size of the file, in bytes. This function is primarily
-           testing.
+            Prints the size of the file, in bytes. This function is primarily
+            testing.
         """
         if len(line) == 0:
             print_err("Must provide a filename")
@@ -2100,10 +2159,10 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_filetype(self, line):
-        """filetype FILE
+        """ filetype FILE
 
-           Prints the type of file (dir or file). This function is primarily
-           for testing.
+            Prints the type of file (dir or file). This function is primarily
+            for testing.
         """
         if len(line) == 0:
             print_err("Must provide a filename")
@@ -2121,10 +2180,10 @@ class Shell(cmd.Cmd):
             self.print('missing')
 
     def do_help(self, line):
-        """help [COMMAND]
+        """ help [COMMAND]
 
-           List available commands with no arguments, or detailed help when
-           a command is provided.
+            List available commands with no arguments, or detailed help when
+            a command is provided.
         """
         # We provide a help function so that we can trim the leading spaces
         # from the docstrings. The builtin help function doesn't do that.
@@ -2172,10 +2231,10 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_ls(self, line):
-        """ls [-a] [-l] [FILE|DIRECTORY|PATTERN]...
-       PATTERN supports * ? [seq] [!seq] Unix filename matching
+        """ ls [-a] [-l] [FILE|DIRECTORY|PATTERN]...
+            PATTERN supports * ? [seq] [!seq] Unix filename matching
 
-           List directory contents.
+            List directory contents.
         """
         args = self.line_to_args(line)
         if len(args.filenames) == 0:
@@ -2200,9 +2259,9 @@ class Shell(cmd.Cmd):
                         self.print('')
                     self.print("%s:" % filename)
                 pattern = '*'
-            else: # A pattern was specified
+            else:  # A pattern was specified
                 filename, pattern = validate_pattern(fn)
-                if filename is None: # An error was printed
+                if filename is None:  # An error was printed
                     continue
             files = []
             ldir_stat = auto(listdir_stat, filename)
@@ -2225,9 +2284,9 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_mkdir(self, line):
-        """mkdir DIRECTORY...
+        """ mkdir DIRECTORY...
 
-           Creates one or more directories.
+            Creates one or more directories.
         """
         args = self.line_to_args(line)
         for filename in args:
@@ -2236,8 +2295,8 @@ class Shell(cmd.Cmd):
                 print_err('Unable to create %s' % filename)
 
     def repl_serial_to_stdout(self, dev):
-        """Runs as a thread which has a sole purpose of readding bytes from
-           the seril port and writing them to stdout. Used by do_repl.
+        """ Runs as a thread which has a sole purpose of readding bytes from
+            the seril port and writing them to stdout. Used by do_repl.
         """
         print('repl_serial_to_stdout dev =', dev)
         with self.serial_reader_running:
@@ -2276,14 +2335,14 @@ class Shell(cmd.Cmd):
                 return
 
     def do_repl(self, line):
-        """repl [board-name] [~ line [~]]
+        """ repl [board-name] [~ line [~]]
 
-           Enters into the regular REPL with the MicroPython board.
-           Use Control-X to exit REPL mode and return the shell. It may take
-           a second or two before the REPL exits.
+            Enters into the regular REPL with the MicroPython board.
+            Use Control-X to exit REPL mode and return the shell. It may take
+            a second or two before the REPL exits.
 
-           If you provide a line to the REPL command, then that will be executed.
-           If you want the REPL to exit, end the line with the ~ character.
+            If you provide a line to the REPL command, then that will be executed.
+            If you want the REPL to exit, end the line with the ~ character.
         """
         args = self.line_to_args(line)
         if len(args) > 0 and line[0] != '~':
@@ -2403,14 +2462,13 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_rm(self, line):
-        """rm [-f|--force] FILE...            Remove one or more files
-       rm [-f|--force] PATTERN            Remove multiple files
-       rm -r [-f|--force] [FILE|DIRECTORY]... Files and/or directories
-       rm -r [-f|--force] PATTERN         Multiple files and/or directories
+        """ rm [-f|--force] FILE...            Remove one or more files
+            rm [-f|--force] PATTERN            Remove multiple files
+            rm -r [-f|--force] [FILE|DIRECTORY]... Files and/or directories
+            rm -r [-f|--force] PATTERN         Multiple files and/or directories
 
-           Removes files or directories. To remove directories (and
-           any contents) -r must be specified.
-
+            Removes files or directories. To remove directories (and
+            any contents) -r must be specified.
         """
         args = self.line_to_args(line)
         filenames = args.filename
@@ -2432,11 +2490,11 @@ class Shell(cmd.Cmd):
                 break
 
     def do_shell(self, line):
-        """!some-shell-command args
+        """ !some-shell-command args
 
-           Launches a shell and executes whatever command you provide. If you
-           don't provide any commands, then it will launch a bash sub-shell
-           and when exit from bash (Control-D) then it will return to rshell.
+            Launches a shell and executes whatever command you provide. If you
+            don't provide any commands, then it will launch a bash sub-shell
+            and when exit from bash (Control-D) then it will return to rshell.
         """
         if not line:
             line = '/bin/bash'
@@ -2487,16 +2545,16 @@ class Shell(cmd.Cmd):
     )
 
     def do_rsync(self, line):
-        """rsync [-m|--mirror] [-n|--dry-run] [-v|--verbose] SRC_DIR DEST_DIR
+        """ rsync [-m|--mirror] [-n|--dry-run] [-v|--verbose] SRC_DIR DEST_DIR
 
-           Synchronizes a destination directory tree with a source directory tree.
+            Synchronizes a destination directory tree with a source directory tree.
         """
         args = self.line_to_args(line)
         src_dir = resolve_path(args.src_dir)
         dst_dir = resolve_path(args.dst_dir)
-        pf = print if args.dry_run or args.verbose else lambda *args : None
+        pf = print if args.dry_run or args.verbose else lambda *args: None
         rsync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
-             print_func=pf, recursed=False, sync_hidden=args.all)
+              print_func=pf, recursed=False, sync_hidden=args.all)
 
 
 def real_main():
@@ -2506,7 +2564,7 @@ def real_main():
     except:
         default_baud = 115200
     default_port = os.getenv('RSHELL_PORT')
-    #if not default_port:
+    # if not default_port:
     #    default_port = '/dev/ttyACM0'
     default_user = os.getenv('RSHELL_USER') or 'micro'
     default_password = os.getenv('RSHELL_PASSWORD') or 'python'
@@ -2696,9 +2754,10 @@ def real_main():
         except KeyboardInterrupt:
             print('')
 
+
 def main():
-    """This main function saves the stdin termios settings, calls real_main,
-       and restores stdin termios settings when it returns.
+    """ This main function saves the stdin termios settings, calls real_main,
+        and restores stdin termios settings when it returns.
     """
     save_settings = None
     stdin_fd = -1
@@ -2713,6 +2772,7 @@ def main():
     finally:
         if save_settings:
             termios.tcsetattr(stdin_fd, termios.TCSANOW, save_settings)
+
 
 if __name__ == "__main__":
     main()

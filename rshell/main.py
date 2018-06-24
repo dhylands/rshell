@@ -218,6 +218,15 @@ def is_micropython_usb_device(port):
     # Check for Teensy VID:PID
     if usb_id.startswith('usb vid:pid=16c0:0483'):
         return True
+    # Check for Pycom's pytrack VID:PID
+    if usb_id.startswith('usb vid:pid=04d8:f013'):
+        return True
+    # Check for Pycom's pysense VID:PID
+    if usb_id.startswith('usb vid:pid=04d8:f012'):
+        return True
+    # Check for Pycom's expansion board VID:PID
+    if usb_id.startswith('usb vid:pid=0403:6015'):
+        return True
     return False
 
 

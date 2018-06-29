@@ -17,7 +17,7 @@ into and out of your pyboard.
 When using the commands, the /flash directory, and the /sdcard directory
 (if an sdcard is inserted) are considered to be on the pyboard, and all
 other directories are considered to be on the host. For an ESP based board you
-can only reference its directory by using the board name e.g. /pyboard etc..
+can only reference its directory by using the board name e.g. /pyboard etc.
 
 NOTE: rshell requires a fairly recent version of the MicroPython
 firmware, specifically one which contains the ubinascii.unhexlify
@@ -90,7 +90,7 @@ Command Line Options
 -h, --help
 ----------
 
-Displays a lit of the valid options. You should get something like the
+Displays a list of the valid options. You should get something like the
 following displayed:
 
 ::
@@ -129,7 +129,7 @@ following displayed:
 --------------------
 
 Sets the baud rate to use when talking to the pyboard over a serial port. If
-no baud is specified, then the baudrate from the RSHELL_BAUD enviroinment
+no baud is specified, then the baudrate from the RSHELL_BAUD environment
 variable is used. If the RSHELL_BAUD environment variable is not defined then
 the default baudrate of 115200 is used.
 
@@ -205,7 +205,7 @@ that each command takes to execute.
 -u USER, --user USER
 --------------------
 
-Specifies the username to use when logging into a WiPy over telent. If no
+Specifies the username to use when logging into a WiPy over telnet. If no
 username is specified, then the username from the RSHELL_USER environment
 variable is used. If the RSHELL_USER environment variable doesn't exist
 then the default username 'micro' is used.
@@ -487,13 +487,13 @@ rm
     optional arguments:
       -h, --help       show this help message and exit
       -r, --recursive  remove directories and their contents recursively
-      -f, --force      ignore nonexistant files and arguments
+      -f, --force      ignore nonexistent files and arguments
 
 A single pattern may be specified. Pattern matching is performed
 according to a subset of the Unix rules (see below). Directories
 can only be removed if the recursive argument is provided.
 
-Beware of rm -r * or worse.
+Beware of :code:`rm -r *` or worse.
 
 rsync
 -----

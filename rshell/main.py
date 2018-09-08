@@ -46,7 +46,9 @@ import itertools
 from serial.tools import list_ports
 
 import traceback
-
+if sys.platform == 'win32':
+    from colorama import init
+    init()
 # I got the following from: http://www.farmckon.net/2009/08/rlcompleter-how-do-i-get-it-to-work/
 
 # Under OSX, if you call input with a prompt which contains ANSI escape
@@ -64,7 +66,7 @@ FAKE_INPUT_PROMPT = False
 
 import readline
 import rlcompleter
-if 'libedit' in readline.__doc__:
+if readline.__doc__ and 'libedit' in readline.__doc__:
     readline.parse_and_bind ("bind ^I rl_complete")
     BROKEN_READLINE = True
 else:

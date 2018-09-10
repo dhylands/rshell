@@ -434,7 +434,8 @@ def resolve_path(path):
     if path[0] == '~':
         # ~ or ~user
         path = os.path.expanduser(path)
-    if sys.platform == 'win32':
+    # is there a nicer way to detect if we are local or remote ?
+    if sys.platform == 'win32' and not path.startswith('/pyboard'):
         if not os.path.isabs(path):  # not an absolute path
             path = os.path.join(cur_dir, path)
         path = os.path.normpath(path)

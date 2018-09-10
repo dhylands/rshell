@@ -434,28 +434,34 @@ def resolve_path(path):
     if path[0] == '~':
         # ~ or ~user
         path = os.path.expanduser(path)
-    if path[0] != '/':
+    if sys.platform == 'win32':
+        if not os.path.isabs(path):  # not an absolute path
+            path = os.path.join(cur_dir, path)
+        path = os.path.normpath(path)
+    else:
+        if path[0] != '/':
         # Relative path
-        if cur_dir[-1] == '/':
-            path = cur_dir + path
-        else:
-            path = cur_dir + '/' + path
-    comps = path.split('/')
-    new_comps = []
-    for comp in comps:
-        # We strip out xxx/./xxx and xxx//xxx, except that we want to keep the
-        # leading / for absolute paths. This also removes the trailing slash
-        # that autocompletion adds to a directory.
-        if comp == '.' or (comp == '' and len(new_comps) > 0):
-            continue
-        if comp == '..':
-            if len(new_comps) > 1:
-                new_comps.pop()
-        else:
-            new_comps.append(comp)
-    if len(new_comps) == 1 and new_comps[0] == '':
-        return '/'
-    return '/'.join(new_comps)
+            if cur_dir[-1] == '/':
+                path = cur_dir + path
+            else:
+                path = cur_dir + '/' + path
+        comps = path.split('/')
+        new_comps = []
+        for comp in comps:
+            # We strip out xxx/./xxx and xxx//xxx, except that we want to keep the
+            # leading / for absolute paths. This also removes the trailing slash
+            # that autocompletion adds to a directory.
+            if comp == '.' or (comp == '' and len(new_comps) > 0):
+                continue
+            if comp == '..':
+                if len(new_comps) > 1:
+                    new_comps.pop()
+            else:
+                new_comps.append(comp)
+        if len(new_comps) == 1 and new_comps[0] == '':
+            return '/'
+        path = '/'.join(new_comps)
+    return path
 
 
 def get_dev_and_path(filename):

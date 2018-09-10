@@ -2084,7 +2084,10 @@ class Shell(cmd.Cmd):
                     print('Retrieving {} ...'.format(filename))
                     cp(filename, local_filename)
                 old_stat = get_stat(local_filename)
-                os.system("{} '{}'".format(EDITOR, local_filename))
+                if sys.platform == 'win32':
+                    os.system('{} "{}"'.format(EDITOR, local_filename))
+                else:
+                    os.system("{} '{}'".format(EDITOR, local_filename))
                 new_stat = get_stat(local_filename)
                 if old_stat != new_stat:
                     self.print('Updating {} ...'.format(filename))

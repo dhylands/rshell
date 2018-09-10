@@ -2075,7 +2075,10 @@ class Shell(cmd.Cmd):
             return
         if dev is None:
             # File is local
-            os.system("{} '{}'".format(EDITOR, filename))
+            if sys.platform == 'win32':
+                os.system('{} "{}"'.format(EDITOR, filename))
+            else:
+                os.system("{} '{}'".format(EDITOR, filename))
         else:
             # File is remote
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -2252,6 +2255,7 @@ class Shell(cmd.Cmd):
            the seril port and writing them to stdout. Used by do_repl.
         """
         print('repl_serial_to_stdout dev =', dev)
+        last_char = None
         with self.serial_reader_running:
             try:
                 save_timeout = dev.timeout
@@ -2280,8 +2284,19 @@ class Shell(cmd.Cmd):
                         if self.quit_when_no_output:
                             break
                         continue
-                    self.stdout.write(char)
+                    if sys.platform == 'win32':
+                        # a backspace results in the following ascii values:
+                        # 8, 27, 91, 75
+                        if ord(char) == 8:  # handle backspace
+                            self.stdout.write('\b \b')
+                        elif last_char and (ord(last_char), ord(char)) in ((8, 27), (27, 91), (91, 75)):
+                            pass
+                        else:
+                            self.stdout.write(char)
+                    else:
+                        self.stdout.write(char)
                     self.stdout.flush()
+                    last_char = char
                 dev.timeout = save_timeout
             except DeviceError:
                 # The device is no longer present.

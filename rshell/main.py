@@ -505,7 +505,7 @@ def extra_funcs(*funcs):
   def extra_funcs_decorator(real_func):
     def wrapper(*args, **kwargs):
       return real_func(*args, **kwargs)
-    wrapper.extra_funcs = [*funcs]
+    wrapper.extra_funcs = list(funcs)
     wrapper.source = inspect.getsource(real_func)
     wrapper.name = real_func.__name__
     return wrapper

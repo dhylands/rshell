@@ -47,8 +47,61 @@ from serial.tools import list_ports
 
 import traceback
 if sys.platform == 'win32':
+    import ctypes
     from colorama import init
     init()
+
+    # def compat_ctypes_WINFUNCTYPE(*args, **kwargs):
+    #     return ctypes.WINFUNCTYPE(*args, **kwargs)
+    def _windows_enable_ANSI(std_id):
+        """Enable Windows 10 cmd.exe ANSI VT Virtual Terminal Processing.
+           adapted from http://stackoverflow.com/a/3259271/35070
+        """
+        from ctypes import byref, POINTER, windll, WINFUNCTYPE
+        from ctypes.wintypes import BOOL, DWORD, HANDLE
+
+        GetStdHandle = ctypes.WINFUNCTYPE(
+            HANDLE,
+            DWORD)(('GetStdHandle', windll.kernel32))
+
+        GetFileType = ctypes.WINFUNCTYPE(
+            DWORD,
+            HANDLE)(('GetFileType', windll.kernel32))
+
+        GetConsoleMode = ctypes.WINFUNCTYPE(
+            BOOL,
+            HANDLE,
+            POINTER(DWORD))(('GetConsoleMode', windll.kernel32))
+
+        SetConsoleMode = ctypes.WINFUNCTYPE(
+            BOOL,
+            HANDLE,
+            DWORD)(('SetConsoleMode', windll.kernel32))
+
+        if std_id == 1:       # stdout
+            h = GetStdHandle(-11)
+        elif std_id == 2:     # stderr
+            h = GetStdHandle(-12)
+        else:
+            return False
+
+        if h is None or h == HANDLE(-1):
+            return False
+
+        FILE_TYPE_CHAR = 0x0002
+        if (GetFileType(h) & 3) != FILE_TYPE_CHAR:
+            return False
+
+        mode = DWORD()
+        if not GetConsoleMode(h, byref(mode)):
+            return False
+
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        if (mode.value & ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0:
+            SetConsoleMode(h, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+        return True
+    _windows_enable_ANSI(1)
+
 # I got the following from: http://www.farmckon.net/2009/08/rlcompleter-how-do-i-get-it-to-work/
 
 # Under OSX, if you call input with a prompt which contains ANSI escape
@@ -2255,7 +2308,6 @@ class Shell(cmd.Cmd):
            the seril port and writing them to stdout. Used by do_repl.
         """
         print('repl_serial_to_stdout dev =', dev)
-        last_char = None
         with self.serial_reader_running:
             try:
                 save_timeout = dev.timeout
@@ -2284,19 +2336,8 @@ class Shell(cmd.Cmd):
                         if self.quit_when_no_output:
                             break
                         continue
-                    if sys.platform == 'win32':
-                        # a backspace results in the following ascii values:
-                        # 8, 27, 91, 75
-                        if ord(char) == 8:  # handle backspace
-                            self.stdout.write('\b \b')
-                        elif last_char and (ord(last_char), ord(char)) in ((8, 27), (27, 91), (91, 75)):
-                            pass
-                        else:
-                            self.stdout.write(char)
-                    else:
-                        self.stdout.write(char)
+                    self.stdout.write(char)
                     self.stdout.flush()
-                    last_char = char
                 dev.timeout = save_timeout
             except DeviceError:
                 # The device is no longer present.
@@ -2347,10 +2388,45 @@ class Shell(cmd.Cmd):
                 dev.write(bytes(line, encoding='utf-8'))
                 dev.write(b'\r')
             if not self.quit_when_no_output:
+                last_char = None
                 while self.serial_reader_running():
                     char = getch()
                     if not char:
                         continue
+                    if sys.platform == 'win32':
+                        if ord(char) in (8, 0xe0):
+                            last_char = char
+                            continue
+                        if last_char:
+                            if (ord(last_char), ord(char)) == (8, 0):  # backspace
+                                last_char = None
+                                dev.write(b'\x7f')
+                                continue
+                            if (ord(last_char), ord(char)) == (0xe0, 0x4b):  # cursor left
+                                last_char = None
+                                dev.write(b'\x1b[D')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x4d):  # cursor right
+                                last_char = None
+                                dev.write(b'\x1b[C')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x48):  # cursor up
+                                last_char = None
+                                dev.write(b'\x1b[A')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x50):  # cursor down
+                                last_char = None
+                                dev.write(b'\x1b[B')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x47):  # POS 1
+                                last_char = None
+                                dev.write(b'\x1b[H')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x4f):  # END
+                                last_char = None
+                                dev.write(b'\x1b[F')
+                                continue
+
                     if char == QUIT_REPL_BYTE:
                         self.quit_serial_reader = True
                         # When using telnet with the WiPy, it doesn't support
@@ -2373,6 +2449,7 @@ class Shell(cmd.Cmd):
                         dev.write(b'\r')
                     else:
                         dev.write(char)
+                    last_char = char
         except DeviceError as err:
             # The device is no longer present.
             self.print('')

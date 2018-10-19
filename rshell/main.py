@@ -27,6 +27,12 @@ except ImportError as err:
     print('sys.path =', sys.path)
     raise err
 
+if sys.platform == 'win32':
+    # This is a workaround for Windows 10/Python 3.7, that allows the colorized output to
+    # work. See: https://stackoverflow.com/questions/12492810/python-how-can-i-make-the-ansi-escape-codes-to-work-also-in-windows
+    import subprocess
+    subprocess.call('', shell=True)
+
 import argparse
 import binascii
 import calendar
@@ -47,6 +53,11 @@ from serial.tools import list_ports
 
 import traceback
 
+if sys.platform == 'win32':
+    EXIT_STR = 'Use the exit command to exit rshell.'
+else:
+    EXIT_STR = 'Use Control-D (or the exit command) to exit rshell.'
+
 # I got the following from: http://www.farmckon.net/2009/08/rlcompleter-how-do-i-get-it-to-work/
 
 # Under OSX, if you call input with a prompt which contains ANSI escape
@@ -64,7 +75,7 @@ FAKE_INPUT_PROMPT = False
 
 import readline
 import rlcompleter
-if 'libedit' in readline.__doc__:
+if readline.__doc__ and 'libedit' in readline.__doc__:
     readline.parse_and_bind ("bind ^I rl_complete")
     BROKEN_READLINE = True
 else:
@@ -1598,7 +1609,7 @@ class Shell(cmd.Cmd):
         if DEBUG:
             print('Executing "%s"' % line)
         self.line_num += 1
-        if line == "EOF":
+        if line == "EOF" or line == 'exit':
             if cmd.Cmd.use_rawinput:
                 # This means that we printed a prompt, and we'll want to
                 # print a newline to pretty things up for the caller.
@@ -2084,6 +2095,13 @@ class Shell(cmd.Cmd):
     def complete_filesize(self, text, line, begidx, endidx):
         return self.filename_complete(text, line, begidx, endidx)
 
+    def do_exit(self, _):
+        """exit
+
+           Exits from rshell.
+        """
+        return True
+
     def do_filesize(self, line):
         """filesize FILE
 
@@ -2130,7 +2148,7 @@ class Shell(cmd.Cmd):
         # from the docstrings. The builtin help function doesn't do that.
         if not line:
             cmd.Cmd.do_help(self, line)
-            self.print("Use Control-D to exit rshell.")
+            self.print(EXIT_STR)
             return
         parser = self.create_argparser(line)
         if parser:
@@ -2685,7 +2703,7 @@ def real_main():
     else:
         cmd_line = ' '.join(args.cmd)
         if cmd_line == '':
-            print('Welcome to rshell. Use Control-D to exit.')
+            print('Welcome to rshell.', EXIT_STR)
         if num_devices() == 0:
             print('')
             print('No MicroPython boards connected - use the connect command to add one')

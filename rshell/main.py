@@ -7,7 +7,7 @@
 """
 
 # Take a look at https://repolinux.wordpress.com/2012/10/09/non-blocking-read-from-stdin-in-python/
-# to see if we can uise those ideas here.
+# to see if we can use those ideas here.
 
 # from __future__ import print_function
 
@@ -144,7 +144,7 @@ BUFFER_SIZE = 512
 QUIET = False
 
 # It turns out that just because pyudev is installed doesn't mean that
-# it can actually be used. So we only bother to try is we're running
+# it can actually be used. So we only bother to try if we're running
 # under linux.
 USE_AUTOCONNECT = sys.platform == 'linux'
 
@@ -291,7 +291,7 @@ def autoconnect_thread(monitor):
 
 def autoscan():
     """autoscan will check all of the serial ports to see if they have
-       a matching VID:PID for a MicroPython board. If it matches.
+       a matching VID:PID for a MicroPython board.
     """
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
@@ -334,7 +334,7 @@ def column_print(fmt, rows, print_func):
     """Prints a formatted list, adjusting the width so everything fits.
     fmt contains a single character for each column. < indicates that the
     column should be left justified, > indicates that the column should
-    be right justified. The last column may be a space which imples left
+    be right justified. The last column may be a space which implies left
     justification and no padding.
 
     """
@@ -352,7 +352,7 @@ def column_print(fmt, rows, print_func):
 
 
 def find_macthing_files(match):
-    """Finds all of the files wihch match (used for completion)."""
+    """Finds all of the files which match (used for completion)."""
     last_slash = match.rfind('/')
     if last_slash == -1:
         dirname = '.'
@@ -472,7 +472,7 @@ def get_dev_and_path(filename):
        that any directories from the pyboard take precendence over local
        directories of the same name. /flash and /sdcard are associated with
        the default device. /dev_name/path where dev_name is the name of a
-       given device is also considered to be associaed with the named device.
+       given device is also considered to be associated with the named device.
 
        If the file is associated with a remote device, then this function
        returns a tuple (dev, dev_filename) where dev is the device and
@@ -583,7 +583,7 @@ def copy_file(src_filename, dst_filename):
 
 def cp(src_filename, dst_filename):
     """Copies one file to another. The source file may be local or remote and
-       the destnation file may be local or remote.
+       the destination file may be local or remote.
     """
     src_dev, src_dev_filename = get_dev_and_path(src_filename)
     dst_dev, dst_dev_filename = get_dev_and_path(dst_filename)
@@ -1086,22 +1086,22 @@ def mode_isfile(mode):
 
 
 def stat_mode(stat):
-    """Returns the mode field from the results returne by os.stat()."""
+    """Returns the mode field from the results returned by os.stat()."""
     return stat[0]
 
 
 def stat_size(stat):
-    """Returns the filesize field from the results returne by os.stat()."""
+    """Returns the filesize field from the results returned by os.stat()."""
     return stat[6]
 
 
 def stat_mtime(stat):
-    """Returns the mtime field from the results returne by os.stat()."""
+    """Returns the mtime field from the results returned by os.stat()."""
     return stat[8]
 
 
 def word_len(word):
-    """Returns the word lenght, minus any color codes."""
+    """Returns the word length, minus any color codes."""
     if word[0] == '\x1b':
         return len(word) - 11   # 7 for color, 4 for no-color
     return len(word)
@@ -1129,7 +1129,7 @@ def print_cols(words, print_func, termwidth=79):
 def decorated_filename(filename, stat):
     """Takes a filename and the stat info and returns the decorated filename.
        The decoration takes the form of a single character which follows
-       the filename. Currently, the only decodation is '/' for directories.
+       the filename. Currently, the only decoration is '/' for directories.
     """
     mode = stat[0]
     if mode_isdir(mode):
@@ -1192,7 +1192,7 @@ def add_arg(*args, **kwargs):
 
 
 def connect(port, baud=115200, user='micro', password='python', wait=0):
-    """Tries to connect automagically vie network or serial."""
+    """Tries to connect automagically via network or serial."""
     try:
         ip_address = socket.gethostbyname(port)
         #print('Connecting to ip', ip_address)
@@ -1447,10 +1447,10 @@ class DeviceSerial(Device):
 
         # Bluetooth devices take some time to connect at startup, and writes
         # issued while the remote isn't connected will fail. So we send newlines
-        # with pauses until one of our writes suceeds.
+        # with pauses until one of our writes succeeds.
         try:
             # we send a Control-C which should kill the current line
-            # assuming we're talking to tha micropython repl. If we send
+            # assuming we're talking to the micropython repl. If we send
             # a newline, then the junk might get interpreted as a command
             # which will do who knows what.
             pyb.serial.write(b'\x03')
@@ -1730,8 +1730,8 @@ class Shell(cmd.Cmd):
         # text should correspond to line[begidx:endidx]
         #
         # The way the completer works text will start after one of the characters
-        # in DELIMS. So if the filename entered so far was "embedded\ sp" and
-        # then text will point to the s in sp.
+        # in DELIMS. So if the filename entered so far was "embedded\ sp" then
+        # text will point to the s in sp.
         #
         # The following bit of logic backs up to find the real beginning of the
         # filename.
@@ -1742,7 +1742,7 @@ class Shell(cmd.Cmd):
 
         # We set fixed to be the portion of the filename which is before text
         # and match is the full portion of the filename that's been entered so
-        # far (that's that part we use for matching files).
+        # far (that's the part we use for matching files).
         #
         # When we return a list of completions, the bit that we return should
         # just be the portion that we replace 'text' with.
@@ -2106,7 +2106,7 @@ class Shell(cmd.Cmd):
         """filesize FILE
 
            Prints the size of the file, in bytes. This function is primarily
-           testing.
+           for testing.
         """
         if len(line) == 0:
             print_err("Must provide a filename")
@@ -2255,7 +2255,7 @@ class Shell(cmd.Cmd):
 
     def repl_serial_to_stdout(self, dev):
         """Runs as a thread which has a sole purpose of readding bytes from
-           the seril port and writing them to stdout. Used by do_repl.
+           the serial port and writing them to stdout. Used by do_repl.
         """
         print('repl_serial_to_stdout dev =', dev)
         with self.serial_reader_running:
@@ -2272,7 +2272,7 @@ class Shell(cmd.Cmd):
                         # goes away.
                         return
                     except TypeError:
-                        # These is a bug in serialposix.py starting with python 3.3
+                        # This is a bug in serialposix.py starting with python 3.3
                         # which causes a TypeError during the handling of the
                         # select.error. So we treat this the same as
                         # serial.serialutil.SerialException:

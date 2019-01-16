@@ -344,7 +344,7 @@ def column_print(fmt, rows, print_func):
              for i in range(num_cols)]
     for row in rows:
         if isinstance(row, str):
-            # Print a seperator line
+            # Print a separator line
             print_func(' '.join([row * width[i] for i in range(num_cols)]))
         else:
             print_func(' '.join([align_cell(fmt[i], row[i], width[i])
@@ -469,7 +469,7 @@ def resolve_path(path):
 
 def get_dev_and_path(filename):
     """Determines if a given file is located locally or remotely. We assume
-       that any directories from the pyboard take precendence over local
+       that any directories from the pyboard take precedence over local
        directories of the same name. /flash and /sdcard are associated with
        the default device. /dev_name/path where dev_name is the name of a
        given device is also considered to be associated with the named device.
@@ -765,7 +765,7 @@ def rm(filename, recursive=False, force=False):
 
 def make_dir(dst_dir, dry_run, print_func, recursed):
     """Creates a directory. Produces information in case of dry run.
-    Isues error where necessary.
+    Issues error where necessary.
     """
     parent = os.path.split(dst_dir.rstrip('/'))[0] # Check for nonexistent parent
     parent_files = auto(listdir_stat, parent) if parent else True # Relative dir
@@ -1881,7 +1881,7 @@ class Shell(cmd.Cmd):
     def do_cat(self, line):
         """cat FILENAME...
 
-           Concatinates files and sends to stdout.
+           Concatenates files and sends to stdout.
         """
         # note: when we get around to supporting cat from stdin, we'll need
         #       to write stdin to a temp file, and then copy the file
@@ -2278,7 +2278,7 @@ class Shell(cmd.Cmd):
                         # serial.serialutil.SerialException:
                         return
                     except ConnectionResetError:
-                        # This happens over a telnet seesion, if it resets
+                        # This happens over a telnet session, if it resets
                         return
                     if not char:
                         # This means that the read timed out. We'll check the quit

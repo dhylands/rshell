@@ -90,7 +90,7 @@ Command Line Options
 -h, --help
 ----------
 
-Displays a lit of the valid options. You should get something like the
+Displays a list of the valid options. You should get something like the
 following displayed:
 
 ::
@@ -129,14 +129,14 @@ following displayed:
 --------------------
 
 Sets the baud rate to use when talking to the pyboard over a serial port. If
-no baud is specified, then the baudrate from the RSHELL_BAUD enviroinment
+no baud is specified, then the baudrate from the RSHELL_BAUD environment
 variable is used. If the RSHELL_BAUD environment variable is not defined then
 the default baudrate of 115200 is used.
 
 --buffer-size
 -------------
 
-Sets the buffer size used when transferring files betweem the host and the
+Sets the buffer size used when transferring files between the host and the
 pyboard. If no buffer size is specified, then the value from the
 RSHELL_BUFFER_SIZE environment variable is used. If the RSHELL_BUFFER_SIZE
 environment variable is not defined, then the default of 512 is used.
@@ -205,7 +205,7 @@ that each command takes to execute.
 -u USER, --user USER
 --------------------
 
-Specifies the username to use when logging into a WiPy over telent. If no
+Specifies the username to use when logging into a WiPy over telnet. If no
 username is specified, then the username from the RSHELL_USER environment
 variable is used. If the RSHELL_USER environment variable doesn't exist
 then the default username 'micro' is used.
@@ -367,7 +367,7 @@ If the file is on a pyboard, it copies the file to host, invokes an
 editor and if any changes were made to the file, it copies it back to
 the pyboard.
 
-The editor which is used defaults to vi, but can be overridem using
+The editor which is used defaults to vi, but can be overridden using
 either the --editor command line option when rshell.py is invoked, or by
 using the RSHELL\_EDITOR, VISUAL or EDITOR environment variables (they
 are tried in the order listed).
@@ -487,7 +487,7 @@ rm
     optional arguments:
       -h, --help       show this help message and exit
       -r, --recursive  remove directories and their contents recursively
-      -f, --force      ignore nonexistant files and arguments
+      -f, --force      ignore nonexistent files and arguments
 
 A single pattern may be specified. Pattern matching is performed
 according to a subset of the Unix rules (see below). Directories

@@ -171,7 +171,7 @@ class Pyboard:
                 time.sleep(0.01)
         return data
 
-    def enter_raw_repl(self):
+    def enter_raw_repl(self, no_reset=False):
         self.serial.write(b'\r\x03\x03') # ctrl-C twice: interrupt any running program
 
         # flush input (without relying on serial.flushInput())
@@ -186,17 +186,25 @@ class Pyboard:
             print(data)
             raise PyboardError('could not enter raw repl')
 
-        self.serial.write(b'\x04') # ctrl-D: soft reset
-        data = self.read_until(1, b'soft reboot\r\n')
-        if not data.endswith(b'soft reboot\r\n'):
-            print(data)
-            raise PyboardError('could not enter raw repl')
-        # By splitting this into 2 reads, it allows boot.py to print stuff,
-        # which will show up after the soft reboot and before the raw REPL.
-        data = self.read_until(1, b'raw REPL; CTRL-B to exit\r\n')
-        if not data.endswith(b'raw REPL; CTRL-B to exit\r\n'):
-            print(data)
-            raise PyboardError('could not enter raw repl')
+        if no_reset:
+            # If not resetting, send a 'space' just to test REPL
+            self.serial.write(b'\x20')
+            self.serial.write(b'\x04')
+            data = self.serial.read(2)
+            if data != b'OK':
+                raise PyboardError('could not exec command')
+        else:
+            self.serial.write(b'\x04') # ctrl-D: soft reset
+            data = self.read_until(1, b'soft reboot\r\n')
+            if not data.endswith(b'soft reboot\r\n'):
+                print(data)
+                raise PyboardError('could not enter raw repl')
+            # By splitting this into 2 reads, it allows boot.py to print stuff,
+            # which will show up after the soft reboot and before the raw REPL.
+            data = self.read_until(1, b'raw REPL; CTRL-B to exit\r\n')
+            if not data.endswith(b'raw REPL; CTRL-B to exit\r\n'):
+                print(data)
+                raise PyboardError('could not enter raw repl')
 
     def exit_raw_repl(self):
         self.serial.write(b'\r\x02') # ctrl-B: enter friendly REPL

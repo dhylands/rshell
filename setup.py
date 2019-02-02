@@ -48,4 +48,8 @@ setup(
             'rshell=rshell.command_line:main'
         ],
     },
+    extras_require={
+        ':sys_platform == "win32"': [
+            'pyreadline']
+    }
 )

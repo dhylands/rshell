@@ -140,7 +140,9 @@ cur_dir = ''
 HAS_BUFFER = False
 IS_UPY = False
 DEBUG = False
-BUFFER_SIZE = 512
+USB_BUFFER_SIZE = 512
+UART_BUFFER_SIZE = 32
+BUFFER_SIZE = USB_BUFFER_SIZE
 QUIET = False
 
 # It turns out that just because pyudev is installed doesn't mean that
@@ -237,6 +239,16 @@ def is_micropython_usb_device(port):
     return False
 
 
+def is_micropython_usb_port(portName):
+    """Checks to see if the indicated portname is a MicroPython device
+       or not.
+    """
+    for port in serial.tools.list_ports.comports():
+        if port.device == portName:
+            return is_micropython_usb_device(port)
+    return False
+
+
 def autoconnect():
     """Sets up a thread to detect when USB devices are plugged and unplugged.
        If the device looks like a MicroPython board, then it will automatically
@@ -301,6 +313,40 @@ def autoscan():
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
             connect_serial(port[0])
+
+
+def extra_info(port):
+    """Collects the serial nunber and manufacturer into a string, if
+       the fields are available."""
+    extra_items = []
+    if port.manufacturer:
+        extra_items.append("vendor '{}'".format(port.manufacturer))
+    if port.serial_number:
+        extra_items.append("serial '{}'".format(port.serial_number))
+    if port.interface:
+        extra_items.append("intf '{}'".format(port.interface))
+    if extra_items:
+        return ' with ' + ' '.join(extra_items)
+    return ''
+
+
+def listports():
+    """listports will display a list of all of the serial ports.
+    """
+    detected = False
+    for port in serial.tools.list_ports.comports():
+        detected = True
+        if port.vid:
+            micropythonPort = ''
+            if is_micropython_usb_device(port):
+                micropythonPort = ' *'
+            print('USB Serial Device {:04x}:{:04x}{} found @{}{}\r'.format(
+                  port.vid, port.pid,
+                  extra_info(port), port.device, micropythonPort))
+        else:
+            print('Serial Device:', port.device)
+    if not detected:
+        print('No serial devices detected')
 
 
 def escape(str):
@@ -561,6 +607,7 @@ def cat(src_filename, dst_file):
         filesize = dev.remote_eval(get_filesize, dev_filename)
         return dev.remote(send_file_to_host, dev_filename, dst_file, filesize,
                           xfer_func=recv_file_from_remote)
+
 
 def chdir(dirname):
     """Changes the current working directory."""
@@ -1227,7 +1274,7 @@ def connect_telnet(name, ip_address=None, user='micro', password='python'):
 def connect_serial(port, baud=115200, wait=0):
     """Connect to a MicroPython board via a serial port."""
     if not QUIET:
-        print('Connecting to %s ...' % port)
+        print('Connecting to %s (buffer-size %d)...' % (port, BUFFER_SIZE))
     try:
         dev = DeviceSerial(port, baud, wait)
     except DeviceError as err:
@@ -1277,21 +1324,32 @@ class Device(object):
         self.has_buffer = False  # needs to be set for remote_eval to work
         self.time_offset = 0
         self.adjust_for_timezone = False
-        if not BINARY_XFER:
+        if not ASCII_XFER:
+            QUIET or print('Testing if sys.stdin.buffer exists ... ', end='', flush=True)
             self.has_buffer = self.remote_eval(test_buffer)
-        if self.has_buffer:
-            if DEBUG:
-                print("Setting has_buffer to True")
-        elif not self.remote_eval(test_unhexlify):
-            raise ShellError('rshell needs MicroPython firmware with ubinascii.unhexlify')
+            QUIET or print('Y' if self.has_buffer else 'N')
         else:
-            if DEBUG:
-                print("MicroPython has unhexlify")
+            QUIET or print('Testing if ubinascii.unhexlify exists ... ', end='', flush=True)
+            unhexlify_exists = self.remote_eval(test_unhexlify)
+            QUIET or print('Y' if unhexlify_exists else 'N')
+            if not unhexlify_exists:
+                raise ShellError('rshell needs MicroPython firmware with ubinascii.unhexlify')
+        QUIET or print('Retrieving root directories ... ', end='', flush=True)
         self.root_dirs = ['/{}/'.format(dir) for dir in self.remote_eval(listdir, '/')]
-        self.sync_time()
+        QUIET or print(' '.join(self.root_dirs))
+        QUIET or print('Setting time ... ', end='', flush=True)
+        now = self.sync_time()
+        QUIET or print(time.strftime('%b %d, %Y %H:%M:%S', now))
+        QUIET or print('Evaluating board_name ... ', end='', flush=True)
         self.name = self.remote_eval(board_name, self.default_board_name())
+        QUIET or print(self.name)
         self.dev_name_short = self.name
+        QUIET or print('Retrieving time epoch ... ', end='', flush=True)
         epoch_tuple = self.remote_eval(get_time_epoch)
+        if len(epoch_tuple) == 8:
+            epoch_tuple = epoch_tuple + (0,)
+        QUIET or print(time.strftime('%b %d, %Y', epoch_tuple))
+
         self.time_offset = calendar.timegm(epoch_tuple)
         # The pyboard maintains its time as localtime, whereas unix and
         # esp32 maintain their time as GMT
@@ -1407,6 +1465,7 @@ class Device(object):
         now = time.localtime(time.time())
         self.remote(set_time, (now.tm_year, now.tm_mon, now.tm_mday, now.tm_wday + 1,
                                now.tm_hour, now.tm_min, now.tm_sec, 0))
+        return now
 
     def write(self, buf):
         """Writes data to the pyboard over the serial port."""
@@ -2559,8 +2618,9 @@ def real_main():
         dest="buffer_size",
         action="store",
         type=int,
-        help="Set the buffer size used for transfers (default = %d)" % default_buffer_size,
-        default=default_buffer_size
+        help="Set the buffer size used for transfers "
+             "(default = %d for USB, %d for UART)" %
+             (USB_BUFFER_SIZE, UART_BUFFER_SIZE),
     )
     parser.add_argument(
         "-p", "--port",
@@ -2606,8 +2666,15 @@ def real_main():
         default=False
     )
     parser.add_argument(
+        "-l", "--list",
+        dest="list",
+        action="store_true",
+        help="Display serial ports",
+        default=False
+    )
+    parser.add_argument(
         "-a", "--ascii",
-        dest="binary_xfer",
+        dest="ascii_xfer",
         action="store_true",
         help="ASCII encode binary files for transfer",
         default=False
@@ -2648,6 +2715,9 @@ def real_main():
     )
     args = parser.parse_args(sys.argv[1:])
 
+    if args.buffer_size is not None:
+        BUFFER_SIZE = args.buffer_size
+
     if args.debug:
         print("Debug = %s" % args.debug)
         print("Port = %s" % args.port)
@@ -2655,11 +2725,12 @@ def real_main():
         print("User = %s" % args.user)
         print("Password = %s" % args.password)
         print("Wait = %d" % args.wait)
+        print("List = %d" % args.list)
         print("nocolor = %d" % args.nocolor)
-        print("binary = %d" % args.binary_xfer)
+        print("ascii = %d" % args.ascii_xfer)
         print("Timing = %d" % args.timing)
         print("Quiet = %d" % args.quiet)
-        print("Buffer_size = %d" % args.buffer_size)
+        print("BUFFER_SIZE = %d" % BUFFER_SIZE)
         print("Cmd = [%s]" % ', '.join(args.cmd))
 
     if args.version:
@@ -2675,8 +2746,6 @@ def real_main():
     global EDITOR
     EDITOR = args.editor
 
-    BUFFER_SIZE = args.buffer_size
-
     if args.nocolor:
         global DIR_COLOR, PROMPT_COLOR, PY_COLOR, END_COLOR
         DIR_COLOR = ''
@@ -2689,10 +2758,21 @@ def real_main():
             global FAKE_INPUT_PROMPT
             FAKE_INPUT_PROMPT = True
 
-    global BINARY_XFER
-    BINARY_XFER = args.binary_xfer
+    global ASCII_XFER
+    ASCII_XFER = args.ascii_xfer
+
+    if args.list:
+        listports()
+        return
 
     if args.port:
+        ASCII_XFER = True
+        if args.buffer_size is None:
+          if is_micropython_usb_port(args.port):
+              BUFFER_SIZE = USB_BUFFER_SIZE
+          else:
+              BUFFER_SIZE = UART_BUFFER_SIZE
+        QUIET or print('Using buffer-size of', BUFFER_SIZE)
         try:
             connect(args.port, baud=args.baud, wait=args.wait, user=args.user, password=args.password)
         except DeviceError as err:

@@ -591,7 +591,7 @@ def board_name(default):
     try:
         import board
         name = board.name
-    except ImportError:
+    except (ImportError, AttributeError):
         name = default
     return repr(name)
 

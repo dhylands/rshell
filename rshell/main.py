@@ -1341,7 +1341,7 @@ class Device(object):
         now = self.sync_time()
         QUIET or print(time.strftime('%b %d, %Y %H:%M:%S', now))
         QUIET or print('Evaluating board_name ... ', end='', flush=True)
-        self.name = self.remote_eval(board_name, self.default_board_name())
+        self.name = self.remote_eval_last(board_name, self.default_board_name())
         QUIET or print(self.name)
         self.dev_name_short = self.name
         QUIET or print('Retrieving time epoch ... ', end='', flush=True)
@@ -1451,6 +1451,12 @@ class Device(object):
            converts the response back into python by using eval.
         """
         return eval(self.remote(func, *args, **kwargs))
+
+    def remote_eval_last(self, func, *args, **kwargs):
+        """Calls func with the indicated args on the micropython board, and
+           converts the response back into python by using eval.
+        """
+        return eval(self.remote(func, *args, **kwargs).split()[-1])
 
     def status(self):
         """Returns a status string to indicate whether we're connected to

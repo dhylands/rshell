@@ -47,7 +47,10 @@ class _GetchWindows:
 
     def __call__(self):
         import msvcrt
-        return msvcrt.getch()
+        ch =  msvcrt.getch()
+        if ch == b'\xe0':
+            ch = {b'H': b'\x10', b'P': b'\x0e', b'M': b'\x06', b'K': b'\x02'}[msvcrt.getch()]
+        return ch
 
 class _GetchMacCarbon:
     """

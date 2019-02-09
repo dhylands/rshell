@@ -2327,7 +2327,6 @@ class Shell(cmd.Cmd):
         """Runs as a thread which has a sole purpose of readding bytes from
            the serial port and writing them to stdout. Used by do_repl.
         """
-        print('repl_serial_to_stdout dev =', dev)
         with self.serial_reader_running:
             try:
                 save_timeout = dev.timeout

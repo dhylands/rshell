@@ -44,10 +44,27 @@ class _GetchUnix:
 class _GetchWindows:
     def __init__(self):
         import msvcrt
+        # Windows sends 0xe0 followed by a single letter for many of the
+        # special keys (like left/right arrow) so we map these to the
+        # characters that MicroPythons readline function will work with.
+        self.keymap = {
+            b'G': b'\x01',   # Control-A Home
+            b'K': b'\x02',   # Control-B Left Arrow
+            b'S': b'\x04',   # Control-D DEL
+            b'O': b'\x05',   # Control-E End
+            b'M': b'\x06',   # Control-F Right Arrow
+            b'P': b'\x0e',   # Control-N Down Arrow (Next line in history)
+            b'H': b'\x10',   # Control-P Up Arrow (Prev line in history)
+        }
 
     def __call__(self):
         import msvcrt
-        return msvcrt.getch()
+        ch = msvcrt.getch()
+        if ch == b'\xe0':
+            ch = msvcrt.getch()
+            if ch in self.keymap:
+                ch = self.keymap[ch]
+        return ch
 
 class _GetchMacCarbon:
     """

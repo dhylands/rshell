@@ -1871,7 +1871,8 @@ class Shell(cmd.Cmd):
         """This will convert the line passed into the do_xxx functions into
         an array of arguments and handle the Output Redirection Operator.
         """
-        args = line.split()
+        # Note: using shlex.split causes quoted substrings to stay together.
+        args = shlex.split(line)
         self.redirect_filename = ''
         self.redirect_dev = None
         redirect_index = -1

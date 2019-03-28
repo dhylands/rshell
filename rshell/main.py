@@ -1545,6 +1545,22 @@ class DeviceSerial(Device):
                 sys.stdout.flush()
             sys.stdout.write('\n')
 
+        # Send Control-C followed by CR until we get a >>> prompt
+        QUIET or print('Trying to connect to REPL ', end='', flush=True)
+        connected = False
+        for _ in range(20):
+            pyb.serial.write(b'\x03\r')
+            data = pyb.read_until(1, b'>>> ', timeout=0.1)
+            if data.endswith(b'>>> '):
+                connected = True
+                break
+            sys.stdout.write('.')
+            sys.stdout.flush()
+        if connected:
+            QUIET or print(' connected', flush=True)
+        else:
+            raise DeviceError('Unable to connect to REPL')
+
         # In theory the serial port is now ready to use
         Device.__init__(self, pyb)
 

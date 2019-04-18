@@ -11,11 +11,16 @@ register-test:
 
 # Creates the distribution tarball and uploads to the pypi test server
 upload-test:
-	python3 setup.py sdist upload -r pypitest
+	rm -rf dist/*
+	python3 setup.py sdist
+	twine upload -u dhylands --repository-url https://test.pypi.org/legacy/ dist/*
 
 # Creates the distribution tarball and uploads to the pypi live server
 upload:
-	python3 setup.py sdist upload -r pypi
+	#python3 setup.py sdist upload -r pypi
+	rm -rf dist/*
+	python3 setup.py sdist
+	twine upload -u dhylands dist/*
 
 # Registers this package on the pypi live server
 register:

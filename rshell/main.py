@@ -711,7 +711,11 @@ def get_mode(filename):
 def stat(filename):
     """Returns os.stat for a given file, adjusting the timestamps as appropriate."""
     import os
-    rstat = os.stat(filename)
+    try:
+        # on the host, lstat won't try to follow symlinks
+        rstat = os.lstat(filename)
+    except:
+        rstat = os.stat(filename)
     return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
 
 
@@ -1150,6 +1154,10 @@ def mode_isdir(mode):
     return mode & 0x4000 != 0
 
 
+def mode_issymlink(mode):
+    return mode & 0xf000 == 0xa000
+
+
 def mode_isfile(mode):
     return mode & 0x8000 != 0
 
@@ -1203,6 +1211,8 @@ def decorated_filename(filename, stat):
     mode = stat[0]
     if mode_isdir(mode):
         return DIR_COLOR + filename + END_COLOR + '/'
+    if mode_issymlink(mode):
+        return filename + '@'
     if filename.endswith('.py'):
         return PY_COLOR + filename + END_COLOR
     return filename

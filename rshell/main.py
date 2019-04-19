@@ -590,8 +590,19 @@ def board_name(default):
     """Returns the boards name (if available)."""
     try:
         import board
-        name = board.name
-    except (ImportError, AttributeError):
+        try:
+            name = board.name
+        except AttributeError:
+            # There was a board.py file, but it didn't have an name attribute
+            # We also ignore this as an error
+            name = default
+    except ImportError:
+        # No board.py file on the pyboard - not an error
+        name = default
+    except BaseException as err:
+        print('Error encountered executing board.py')
+        import sys
+        sys.print_exception(err)
         name = default
     return repr(name)
 
@@ -1347,8 +1358,12 @@ class Device(object):
         now = self.sync_time()
         QUIET or print(time.strftime('%b %d, %Y %H:%M:%S', now))
         QUIET or print('Evaluating board_name ... ', end='', flush=True)
-        self.name = self.remote_eval_last(board_name, self.default_board_name())
+        self.name, messages = self.remote_eval_last(board_name, self.default_board_name())
         QUIET or print(self.name)
+        if (len(messages) > 0) and not QUIET:
+            print('----- Prints from board.py ----')
+            print(messages)
+            print('----')
         self.dev_name_short = self.name
         QUIET or print('Retrieving time epoch ... ', end='', flush=True)
         epoch_tuple = self.remote_eval(get_time_epoch)
@@ -1462,7 +1477,10 @@ class Device(object):
         """Calls func with the indicated args on the micropython board, and
            converts the response back into python by using eval.
         """
-        return eval(self.remote(func, *args, **kwargs).split()[-1])
+        result = self.remote(func, *args, **kwargs).split(b'\r\n')
+        messages = result[0:-2]
+        messages = b'\n'.join(messages).decode('utf-8')
+        return (eval(result[-2]), messages)
 
     def status(self):
         """Returns a status string to indicate whether we're connected to

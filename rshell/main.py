@@ -474,7 +474,7 @@ def validate_pattern(fn):
     if not mode_isdir(mode):
         print_err("cannot access '{}': Not a directory".format(fn))
         return None, None
-    return directory, pattern
+    return target, pattern
 
 
 def process_pattern(fn):
@@ -580,7 +580,7 @@ def auto(func, filename, *args, **kwargs):
     """
     dev, dev_filename = get_dev_and_path(filename)
     if dev is None:
-        if dev_filename[0] == '~':
+        if len(dev_filename) > 0 and dev_filename[0] == '~':
             dev_filename = os.path.expanduser(dev_filename)
         return func(dev_filename, *args, **kwargs)
     return dev.remote_eval(func, dev_filename, *args, **kwargs)
@@ -761,8 +761,12 @@ def listdir_matches(match):
             dirname = match[0:last_slash]
             result_prefix = dirname + '/'
     def add_suffix_if_dir(filename):
-        if (os.stat(filename)[0] & 0x4000) != 0:
-            return filename + '/'
+        try:
+            if (os.stat(filename)[0] & 0x4000) != 0:
+                return filename + '/'
+        except FileNotFoundError:
+            # This can happen when a symlink points to a non-existant file.
+            pass
         return filename
     matches = [add_suffix_if_dir(result_prefix + filename)
                for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
@@ -872,9 +876,6 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
     d_dst = {}
     dst_files = auto(listdir_stat, dst_dir, show_hidden=sync_hidden)
     if dst_files is None: # Directory does not exist
-        if not recursed:
-            print_err('Destination directory {} does not exist.'.format(dst_dir))
-            return
         if not make_dir(dst_dir, dry_run, print_func, recursed):
             return
     else: # dest exists
@@ -1856,9 +1857,13 @@ class Shell(cmd.Cmd):
         # The following bit of logic backs up to find the real beginning of the
         # filename.
 
-        for before_match in range(begidx, 0, -1):
-            if line[before_match] in DELIMS and before_match >= 1 and line[before_match - 1] != '\\':
-                break
+        if begidx >= len(line):
+            # This happens when you hit TAB on an empty filename
+            before_match = begidx
+        else:
+            for before_match in range(begidx, 0, -1):
+                if line[before_match] in DELIMS and before_match >= 1 and line[before_match - 1] != '\\':
+                    break
 
         # We set fixed to be the portion of the filename which is before text
         # and match is the full portion of the filename that's been entered so
@@ -1872,12 +1877,15 @@ class Shell(cmd.Cmd):
 
         # We do the following to cover the case that the current directory
         # is / and the path being entered is relative.
-        if match[0] == '/':
+        strip = ''
+        if len(match) > 0 and match[0] == '/':
             abs_match = match
         elif cur_dir == '/':
             abs_match = cur_dir + match
+            strip = cur_dir
         else:
             abs_match = cur_dir + '/' + match
+            strip = cur_dir + '/'
 
         completions = []
         prepend = ''
@@ -1906,10 +1914,13 @@ class Shell(cmd.Cmd):
                 for dev in DEVS:
                     if abs_match.startswith(dev.name_path):
                         prepend = dev.name_path[:-1]
+                        break
 
-        paths = sorted(auto(listdir_matches, match))
+        paths = sorted(auto(listdir_matches, abs_match))
         for path in paths:
             path = prepend + path
+            if path.startswith(strip):
+                path = path[len(strip):]
             completions.append(escape(path.replace(fixed, '', 1)))
         return completions
 
@@ -2330,9 +2341,9 @@ class Shell(cmd.Cmd):
                     continue
                 if not mode_isdir(mode):
                     if args.long:
-                        print_long(filename, stat, self.print)
+                        print_long(fn, stat, self.print)
                     else:
-                        self.print(filename)
+                        self.print(fn)
                     continue
                 if len(args.filenames) > 1:
                     if idx > 0:
@@ -2606,10 +2617,10 @@ class Shell(cmd.Cmd):
             default=False
         ),
         add_arg(
-            '-v', '--verbose',
-            dest='verbose',
+            '-q', '--quiet',
+            dest='quiet',
             action='store_true',
-            help='shows what has been done.',
+            help='Doesn\'t show what has been done.',
             default=False
         ),
         add_arg(
@@ -2625,14 +2636,15 @@ class Shell(cmd.Cmd):
     )
 
     def do_rsync(self, line):
-        """rsync [-m|--mirror] [-n|--dry-run] [-v|--verbose] SRC_DIR DEST_DIR
+        """rsync [-m|--mirror] [-n|--dry-run] [-q|--quiet] SRC_DIR DEST_DIR
 
            Synchronizes a destination directory tree with a source directory tree.
         """
         args = self.line_to_args(line)
         src_dir = resolve_path(args.src_dir)
         dst_dir = resolve_path(args.dst_dir)
-        pf = print if args.dry_run or args.verbose else lambda *args : None
+        verbose = not args.quiet
+        pf = print if args.dry_run or verbose else lambda *args : None
         rsync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
              print_func=pf, recursed=False, sync_hidden=args.all)
 

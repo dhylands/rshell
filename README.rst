@@ -500,7 +500,7 @@ rsync
 
 ::
 
-    usage: rsync [-m|--mirror] [-n|--dry-run] [-v|--verbose] SRC_DIR DEST_DIR
+    usage: rsync [-m|--mirror] [-n|--dry-run] [-q|--quiet] SRC_DIR DEST_DIR
 
     Recursively synchronises a source directory to a destination.
     Directories must exist.
@@ -514,7 +514,7 @@ rsync
       -m, --mirror     remove files or directories from destination if
                        absent from source.
       -n, --dry-run    make no changes but report what would be done. Implies -v
-      -v, --verbose    report changes made.
+      -q, --quiet      don't report changes made.
 
 
 Synchronisation is performed by comparing the date and time of source

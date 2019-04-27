@@ -108,6 +108,8 @@ following displayed:
       --buffer-size BUFFER_SIZE
                             Set the buffer size used for transfers (default = 512)
       -p PORT, --port PORT  Set the serial port to use (default '/dev/ttyACM0')
+      --rts RTS             Set the RTS state (default '')
+      --dtr DTR             Set the DTR state (default '')
       -u USER, --user USER  Set username to use (default 'micro')
       -w PASSWORD, --password PASSWORD
                             Set password to use (default 'python')
@@ -189,6 +191,18 @@ Specifies the serial port which should be used to talk to the
 MicroPython board. You can set the RSHELL\_PORT environment variable to
 specify the default port to be used, if --port is not specified on the
 command line.
+
+--dtr [0|1|True|False]
+--------------------
+
+Sets the state of the DTR line when opening the serial port. This may
+also be defaulted from the RSHELL_DTR environment variable.
+
+--rts [0|1|True|False]
+--------------------
+
+Sets the state of the RTS line when opening the serial port. This may
+also be defaulted from the RSHELL_RTS environment variable.
 
 --quiet
 -------

@@ -116,20 +116,32 @@ class TelnetToSerial:
         else:
             return n_waiting
 
+def parse_bool(str):
+    return str == '1' or str.lower() == 'true'
+
 class Pyboard:
-    def __init__(self, device, baudrate=115200, user='micro', password='python', wait=0):
+    def __init__(self, device, baudrate=115200, user='micro', password='python', wait=0, rts='', dtr=''):
         if device and device[0].isdigit() and device[-1].isdigit() and device.count('.') == 3:
             # device looks like an IP address
             self.serial = TelnetToSerial(device, user, password, read_timeout=10)
         else:
             import serial
             delayed = False
+            if serial.VERSION == '3.0':
+                self.serial = serial.Serial(baudrate=baudrate, inter_byte_timeout=1)
+            else:
+                self.serial = serial.Serial(baudrate=baudrate, interCharTimeout=1)
+            if rts != '':
+                self.serial.rts = parse_bool(rts)
+            if dtr != '':
+                self.serial.dtr = parse_bool(dtr)
+            self.serial.port = device
             for attempt in range(wait + 1):
                 try:
-                    if serial.VERSION == '3.0':
-                        self.serial = serial.Serial(device, baudrate=baudrate, inter_byte_timeout=1)
-                    else:
-                        self.serial = serial.Serial(device, baudrate=baudrate, interCharTimeout=1)
+                    # Assigning the port attribute will attempt to open the port
+                    print('Trying to open serial port', device)
+                    self.serial.open()
+                    print('Serial port opened successfully', self.serial.is_open)
                     break
                 except (OSError, IOError): # Py2 and Py3 have different errors
                     if wait == 0:

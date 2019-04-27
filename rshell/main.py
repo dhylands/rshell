@@ -144,6 +144,8 @@ USB_BUFFER_SIZE = 512
 UART_BUFFER_SIZE = 32
 BUFFER_SIZE = USB_BUFFER_SIZE
 QUIET = False
+RTS = ''
+DTR = ''
 
 # It turns out that just because pyudev is installed doesn't mean that
 # it can actually be used. So we only bother to try if we're running
@@ -1545,7 +1547,7 @@ class DeviceSerial(Device):
         self.dev_name_long = '%s at %d baud' % (port, baud)
 
         try:
-            pyb = Pyboard(port, baudrate=baud, wait=wait)
+            pyb = Pyboard(port, baudrate=baud, wait=wait, rts=RTS, dtr=DTR)
         except PyboardError as err:
             print(err)
             sys.exit(1)
@@ -2651,13 +2653,15 @@ class Shell(cmd.Cmd):
 
 def real_main():
     """The main program."""
+    global RTS
+    global DTR
     try:
         default_baud = int(os.getenv('RSHELL_BAUD'))
     except:
         default_baud = 115200
     default_port = os.getenv('RSHELL_PORT')
-    #if not default_port:
-    #    default_port = '/dev/ttyACM0'
+    default_rts = os.getenv('RSHELL_RTS') or RTS
+    default_dtr = os.getenv('RSHELL_DTR') or DTR
     default_user = os.getenv('RSHELL_USER') or 'micro'
     default_password = os.getenv('RSHELL_PASSWORD') or 'python'
     default_editor = os.getenv('RSHELL_EDITOR') or os.getenv('VISUAL') or os.getenv('EDITOR') or 'vi'
@@ -2695,6 +2699,18 @@ def real_main():
         dest="port",
         help="Set the serial port to use (default '%s')" % default_port,
         default=default_port
+    )
+    parser.add_argument(
+        "--rts",
+        dest="rts",
+        help="Set the RTS state (default '%s')" % default_rts,
+        default=default_rts
+    )
+    parser.add_argument(
+        "--dtr",
+        dest="dtr",
+        help="Set the DTR state (default '%s')" % default_dtr,
+        default=default_dtr
     )
     parser.add_argument(
         "-u", "--user",
@@ -2828,6 +2844,8 @@ def real_main():
 
     global ASCII_XFER
     ASCII_XFER = args.ascii_xfer
+    RTS = args.rts
+    DTR = args.dtr
 
     if args.list:
         listports()

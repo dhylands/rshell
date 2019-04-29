@@ -52,6 +52,61 @@ import itertools
 from serial.tools import list_ports
 
 import traceback
+if sys.platform == 'win32':
+    import ctypes
+    from colorama import init
+    init()
+
+    # def compat_ctypes_WINFUNCTYPE(*args, **kwargs):
+    #     return ctypes.WINFUNCTYPE(*args, **kwargs)
+    def _windows_enable_ANSI(std_id):
+        """Enable Windows 10 cmd.exe ANSI VT Virtual Terminal Processing.
+           adapted from http://stackoverflow.com/a/3259271/35070
+        """
+        from ctypes import byref, POINTER, windll, WINFUNCTYPE
+        from ctypes.wintypes import BOOL, DWORD, HANDLE
+
+        GetStdHandle = ctypes.WINFUNCTYPE(
+            HANDLE,
+            DWORD)(('GetStdHandle', windll.kernel32))
+
+        GetFileType = ctypes.WINFUNCTYPE(
+            DWORD,
+            HANDLE)(('GetFileType', windll.kernel32))
+
+        GetConsoleMode = ctypes.WINFUNCTYPE(
+            BOOL,
+            HANDLE,
+            POINTER(DWORD))(('GetConsoleMode', windll.kernel32))
+
+        SetConsoleMode = ctypes.WINFUNCTYPE(
+            BOOL,
+            HANDLE,
+            DWORD)(('SetConsoleMode', windll.kernel32))
+
+        if std_id == 1:       # stdout
+            h = GetStdHandle(-11)
+        elif std_id == 2:     # stderr
+            h = GetStdHandle(-12)
+        else:
+            return False
+
+        if h is None or h == HANDLE(-1):
+            return False
+
+        FILE_TYPE_CHAR = 0x0002
+        if (GetFileType(h) & 3) != FILE_TYPE_CHAR:
+            return False
+
+        mode = DWORD()
+        if not GetConsoleMode(h, byref(mode)):
+            return False
+
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        if (mode.value & ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0:
+            SetConsoleMode(h, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+        return True
+    _windows_enable_ANSI(1)
 
 if sys.platform == 'win32':
     EXIT_STR = 'Use the exit command to exit rshell.'
@@ -496,28 +551,35 @@ def resolve_path(path):
     if path[0] == '~':
         # ~ or ~user
         path = os.path.expanduser(path)
-    if path[0] != '/':
+    # is there a nicer way to detect if we are local or remote ?
+    if sys.platform == 'win32' and not path.startswith('/pyboard'):
+        if not os.path.isabs(path):  # not an absolute path
+            path = os.path.join(cur_dir, path)
+        path = os.path.normpath(path)
+    else:
+        if path[0] != '/':
         # Relative path
-        if cur_dir[-1] == '/':
-            path = cur_dir + path
-        else:
-            path = cur_dir + '/' + path
-    comps = path.split('/')
-    new_comps = []
-    for comp in comps:
-        # We strip out xxx/./xxx and xxx//xxx, except that we want to keep the
-        # leading / for absolute paths. This also removes the trailing slash
-        # that autocompletion adds to a directory.
-        if comp == '.' or (comp == '' and len(new_comps) > 0):
-            continue
-        if comp == '..':
-            if len(new_comps) > 1:
-                new_comps.pop()
-        else:
-            new_comps.append(comp)
-    if len(new_comps) == 1 and new_comps[0] == '':
-        return '/'
-    return '/'.join(new_comps)
+            if cur_dir[-1] == '/':
+                path = cur_dir + path
+            else:
+                path = cur_dir + '/' + path
+        comps = path.split('/')
+        new_comps = []
+        for comp in comps:
+            # We strip out xxx/./xxx and xxx//xxx, except that we want to keep the
+            # leading / for absolute paths. This also removes the trailing slash
+            # that autocompletion adds to a directory.
+            if comp == '.' or (comp == '' and len(new_comps) > 0):
+                continue
+            if comp == '..':
+                if len(new_comps) > 1:
+                    new_comps.pop()
+            else:
+                new_comps.append(comp)
+        if len(new_comps) == 1 and new_comps[0] == '':
+            return '/'
+        path = '/'.join(new_comps)
+    return path
 
 
 def get_dev_and_path(filename):
@@ -2211,7 +2273,10 @@ class Shell(cmd.Cmd):
             return
         if dev is None:
             # File is local
-            os.system("{} '{}'".format(EDITOR, filename))
+            if sys.platform == 'win32':
+                os.system('{} "{}"'.format(EDITOR, filename))
+            else:
+                os.system("{} '{}'".format(EDITOR, filename))
         else:
             # File is remote
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -2220,7 +2285,10 @@ class Shell(cmd.Cmd):
                     print('Retrieving {} ...'.format(filename))
                     cp(filename, local_filename)
                 old_stat = get_stat(local_filename)
-                os.system("{} '{}'".format(EDITOR, local_filename))
+                if sys.platform == 'win32':
+                    os.system('{} "{}"'.format(EDITOR, local_filename))
+                else:
+                    os.system("{} '{}'".format(EDITOR, local_filename))
                 new_stat = get_stat(local_filename)
                 if old_stat != new_stat:
                     self.print('Updating {} ...'.format(filename))
@@ -2471,10 +2539,45 @@ class Shell(cmd.Cmd):
                 dev.write(bytes(line, encoding='utf-8'))
                 dev.write(b'\r')
             if not self.quit_when_no_output:
+                last_char = None
                 while self.serial_reader_running():
                     char = getch()
                     if not char:
                         continue
+                    if sys.platform == 'win32':
+                        if ord(char) in (8, 0xe0):
+                            last_char = char
+                            continue
+                        if last_char:
+                            if (ord(last_char), ord(char)) == (8, 0):  # backspace
+                                last_char = None
+                                dev.write(b'\x7f')
+                                continue
+                            if (ord(last_char), ord(char)) == (0xe0, 0x4b):  # cursor left
+                                last_char = None
+                                dev.write(b'\x1b[D')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x4d):  # cursor right
+                                last_char = None
+                                dev.write(b'\x1b[C')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x48):  # cursor up
+                                last_char = None
+                                dev.write(b'\x1b[A')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x50):  # cursor down
+                                last_char = None
+                                dev.write(b'\x1b[B')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x47):  # POS 1
+                                last_char = None
+                                dev.write(b'\x1b[H')
+                                continue
+                            elif (ord(last_char), ord(char)) == (0xe0, 0x4f):  # END
+                                last_char = None
+                                dev.write(b'\x1b[F')
+                                continue
+
                     if char == QUIT_REPL_BYTE:
                         self.quit_serial_reader = True
                         # When using telnet with the WiPy, it doesn't support
@@ -2497,6 +2600,7 @@ class Shell(cmd.Cmd):
                         dev.write(b'\r')
                     else:
                         dev.write(char)
+                    last_char = char
         except DeviceError as err:
             # The device is no longer present.
             self.print('')

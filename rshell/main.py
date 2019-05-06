@@ -2220,11 +2220,11 @@ class Shell(cmd.Cmd):
                     print('Retrieving {} ...'.format(filename))
                     cp(filename, local_filename)
                 old_stat = get_stat(local_filename)
-                os.system("{} '{}'".format(EDITOR, local_filename))
-                new_stat = get_stat(local_filename)
-                if old_stat != new_stat:
-                    self.print('Updating {} ...'.format(filename))
-                    cp(local_filename, filename)
+                if os.system("{} '{}'".format(EDITOR, local_filename)) == 0:
+                    new_stat = get_stat(local_filename)
+                    if old_stat != new_stat:
+                        self.print('Updating {} ...'.format(filename))
+                        cp(local_filename, filename)
 
     def complete_filesize(self, text, line, begidx, endidx):
         return self.filename_complete(text, line, begidx, endidx)

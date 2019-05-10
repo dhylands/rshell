@@ -1844,7 +1844,7 @@ class Shell(cmd.Cmd):
     def onecmd(self, line):
         """Override onecmd.
 
-        1 - So we don't have to have a do_EOF method.
+        1 - So we don't have to have a EOF method.
         2 - So we can strip comments
         3 - So we can track line numbers
         """
@@ -2235,7 +2235,7 @@ class Shell(cmd.Cmd):
         """mv SOURCE DEST             move or rename a single file
        mv SOURCE... DIRECTORY     move multiple files or directories to a destination directory
        mv PATTERN DEST            move one or more files to a destination of the correct type
-       options -n --no-clobber     To determnine the action if the destination exists
+       options -n --no-clobber    To determnine the action if the destination exists
                -f --force
         """
 

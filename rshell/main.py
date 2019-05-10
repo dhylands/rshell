@@ -692,7 +692,7 @@ def mv(src_filename, dst_filename, mv_mode):
     """This isn't unix mv, it copies one file to another, then deletes the
        source. The source file may be local or remote and the destination 
        file may be local or remote, Options are handled differently no-clobber
-       and interactive answered 'no' halt execution giving error message
+       on an existing file will halt execution giving error message
        unable to mv source to destination 
     """
     def add_item(filename, new_item):
@@ -724,13 +724,21 @@ def mv(src_filename, dst_filename, mv_mode):
         else:
             src_basename = os.path.basename(src_filename)
 
-        #make the directory. it may already exist
-        auto(make_directory, add_item(dst_filename, src_basename))
+        new_location = add_item(dst_filename, src_basename)
+        new_exists = auto(get_stat, new_location) != (0, ) * 10
+        # stop for no clobber when a file exist
+        if mv_mode == 'n' and new_exists:
+            return False
+        # don't overwrite a non-empty directory
+        if new_exists and auto(listdir, new_location) != []:
+            return False
+        # create the directory if it doesn't exist
+        if not new_exists:
+            if not auto(make_directory, new_location):
+                return False
         
-        dst_filename = add_item(dst_filename, src_basename)
-
         for file_ in src_dir_contents:
-            if not mv(add_item(src_filename, file_), dst_filename, mv_mode):
+            if not mv(add_item(src_filename, file_), new_location, mv_mode):
                 return False
 
         return auto(remove_dir, src_filename)

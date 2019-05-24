@@ -1545,7 +1545,6 @@ class DeviceSerial(Device):
             except KeyboardInterrupt:
                 raise DeviceError('Interrupted')
 
-        self.dev_name_short = port
         self.dev_name_long = '%s at %d baud' % (port, baud)
 
         try:
@@ -1598,6 +1597,7 @@ class DeviceSerial(Device):
 
         # In theory the serial port is now ready to use
         Device.__init__(self, pyb)
+        self.dev_name_short = port
 
     def default_board_name(self):
         return 'pyboard'

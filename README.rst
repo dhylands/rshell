@@ -193,13 +193,13 @@ specify the default port to be used, if --port is not specified on the
 command line.
 
 --dtr [0|1|True|False]
---------------------
+----------------------
 
 Sets the state of the DTR line when opening the serial port. This may
 also be defaulted from the RSHELL_DTR environment variable.
 
 --rts [0|1|True|False]
---------------------
+----------------------
 
 Sets the state of the RTS line when opening the serial port. This may
 also be defaulted from the RSHELL_RTS environment variable.

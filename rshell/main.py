@@ -1939,7 +1939,10 @@ class Shell(cmd.Cmd):
         an array of arguments and handle the Output Redirection Operator.
         """
         # Note: using shlex.split causes quoted substrings to stay together.
-        args = shlex.split(line)
+        try:
+            args = shlex.split(line)
+        except ValueError as err:
+            raise DeviceError(str(err))
         self.redirect_filename = ''
         self.redirect_dev = None
         redirect_index = -1

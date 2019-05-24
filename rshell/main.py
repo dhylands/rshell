@@ -2672,6 +2672,8 @@ def real_main():
     default_user = os.getenv('RSHELL_USER') or 'micro'
     default_password = os.getenv('RSHELL_PASSWORD') or 'python'
     default_editor = os.getenv('RSHELL_EDITOR') or os.getenv('VISUAL') or os.getenv('EDITOR') or 'vi'
+    default_color = sys.stdout.isatty()
+    default_nocolor = not default_color
     global BUFFER_SIZE
     try:
         default_buffer_size = int(os.getenv('RSHELL_BUFFER_SIZE'))
@@ -2754,7 +2756,7 @@ def real_main():
         dest="nocolor",
         action="store_true",
         help="Turn off colorized output",
-        default=False
+        default=default_nocolor
     )
     parser.add_argument(
         "-l", "--list",

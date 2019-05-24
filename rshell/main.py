@@ -1531,15 +1531,17 @@ class DeviceSerial(Device):
         if wait and not os.path.exists(port):
             toggle = False
             try:
-                sys.stdout.write("Waiting %d seconds for serial port '%s' to exist" % (wait, port))
-                sys.stdout.flush()
-                while wait and not os.path.exists(port):
-                    sys.stdout.write('.')
+                if not QUIET:
+                    sys.stdout.write("Waiting %d seconds for serial port '%s' to exist" % (wait, port))
                     sys.stdout.flush()
+                while wait and not os.path.exists(port):
+                    if not QUIET:
+                        sys.stdout.write('.')
+                        sys.stdout.flush()
                     time.sleep(0.5)
                     toggle = not toggle
                     wait = wait if not toggle else wait -1
-                sys.stdout.write("\n")
+                QUIET or sys.stdout.write("\n")
             except KeyboardInterrupt:
                 raise DeviceError('Interrupted')
 
@@ -1564,7 +1566,7 @@ class DeviceSerial(Device):
         except serial.serialutil.SerialException:
             # Write failed. Now report that we're waiting and keep trying until
             # a write succeeds
-            sys.stdout.write("Waiting for transport to be connected.")
+            QUIET or sys.stdout.write("Waiting for transport to be connected.")
             while True:
                 time.sleep(0.5)
                 try:
@@ -1572,9 +1574,10 @@ class DeviceSerial(Device):
                     break
                 except serial.serialutil.SerialException:
                     pass
-                sys.stdout.write('.')
-                sys.stdout.flush()
-            sys.stdout.write('\n')
+                if not QUIET:
+                    sys.stdout.write('.')
+                    sys.stdout.flush()
+            QUIET or sys.stdout.write('\n')
 
         # Send Control-C followed by CR until we get a >>> prompt
         QUIET or print('Trying to connect to REPL ', end='', flush=True)
@@ -1585,8 +1588,9 @@ class DeviceSerial(Device):
             if data.endswith(b'>>> '):
                 connected = True
                 break
-            sys.stdout.write('.')
-            sys.stdout.flush()
+            if not QUIET:
+                sys.stdout.write('.')
+                sys.stdout.flush()
         if connected:
             QUIET or print(' connected', flush=True)
         else:

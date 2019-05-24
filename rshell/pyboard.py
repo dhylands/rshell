@@ -139,9 +139,7 @@ class Pyboard:
             for attempt in range(wait + 1):
                 try:
                     # Assigning the port attribute will attempt to open the port
-                    print('Trying to open serial port', device)
                     self.serial.open()
-                    print('Serial port opened successfully', self.serial.is_open)
                     break
                 except (OSError, IOError): # Py2 and Py3 have different errors
                     if wait == 0:

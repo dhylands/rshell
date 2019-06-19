@@ -969,6 +969,7 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
     """Function which runs on the pyboard. Matches up with send_file_to_remote."""
     import sys
     import ubinascii
+    import os
     if HAS_BUFFER:
         try:
             import pyb
@@ -1011,6 +1012,8 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
                     dst_file.write(write_buf[0:read_size])
                 else:
                     dst_file.write(ubinascii.unhexlify(write_buf[0:read_size]))
+                if hasattr(os, 'sync'):
+                    os.sync()
                 bytes_remaining -= read_size
         return True
     except:

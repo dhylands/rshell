@@ -680,6 +680,128 @@ def cp(src_filename, dst_filename):
     return False
 
 
+def remove_dir(dirname):
+    """removes a directory"""
+    import os
+    try:
+        os.rmdir(dirname)
+    except OSError:
+        return False
+    return True
+
+
+def mv(src_filename, dst_filename, mv_mode):
+    """This isn't unix mv, it copies one file to another, then deletes the
+       source. The source file may be local or remote and the destination 
+       file may be local or remote, Options are handled differently no-clobber
+       on an existing file will halt execution giving error message
+       unable to mv source to destination 
+    """
+    def add_item(filename, new_item):
+        if filename[-1] != '/':
+            filename += '/'
+        return filename + new_item
+
+    src_dev, src_dev_filename = get_dev_and_path(src_filename)
+    dst_dev, dst_dev_filename = get_dev_and_path(dst_filename)
+    src_mode = auto(get_mode, src_filename)
+    dst_mode = auto(get_mode, dst_filename)
+    dst_exists = auto(get_stat, dst_filename) != (0, ) * 10
+    if mode_isdir(src_mode):
+        if not dst_exists:
+            try:
+                if not auto(make_directory, dst_filename):
+                    return False
+            except OSError:
+                return False
+            src_dir_contents = auto(listdir, src_filename)
+            for file_ in src_dir_contents:
+                if not mv(add_item(src_filename, file_), dst_filename, mv_mode):
+                    return False
+            return auto(remove_dir, src_filename)
+
+        src_dir_contents = auto(listdir, src_filename)
+        if src_filename[-1] == '/':
+            src_basename = os.path.basename(src_filename[:-1])
+        else:
+            src_basename = os.path.basename(src_filename)
+
+        new_location = add_item(dst_filename, src_basename)
+        new_exists = auto(get_stat, new_location) != (0, ) * 10
+        # stop for no clobber when a file exist
+        if mv_mode == 'n' and new_exists:
+            return False
+        # don't overwrite a non-empty directory
+        if new_exists and auto(listdir, new_location) != []:
+            return False
+        # create the directory if it doesn't exist
+        if not new_exists:
+            if not auto(make_directory, new_location):
+                return False
+        
+        for file_ in src_dir_contents:
+            if not mv(add_item(src_filename, file_), new_location, mv_mode):
+                return False
+
+        return auto(remove_dir, src_filename)
+
+    src_basename = os.path.basename(src_filename)
+    if mode_isdir(dst_mode):
+        dst_dev_filename = add_item(dst_dev_filename, src_basename)
+        dst_filename = add_item(dst_filename, src_basename)
+
+    dst_dir_contents = auto(listdir, os.path.dirname(dst_filename))
+    # stop for no clobber when a file exist
+    if mv_mode == 'n' and src_basename in dst_dir_contents:
+        return False 
+
+    # Forced remove of the destination file
+    if mv_mode == 'f' and src_basename in dst_dir_contents:
+        if not auto(remove_file, resolve_path(dst_filename) , False, True):
+            return False
+        
+    if src_dev is dst_dev:
+        # src and dst are either on the same remote, or both are on the host
+        if auto(copy_file, src_filename, dst_dev_filename):
+            return auto(remove_file, src_filename, False, False)
+        else:
+            return False
+
+    filesize = auto(get_filesize, src_filename)
+
+    if dst_dev is None:
+        # Moving from remote to host
+        with open(dst_dev_filename, 'wb') as dst_file:
+            if src_dev.remote(send_file_to_host, src_dev_filename, dst_file,
+                              filesize, xfer_func=recv_file_from_remote):
+                return auto(remove_file, src_filename, False, False)
+            else:
+                return False
+                
+    if src_dev is None:
+        # Moving from host to remote
+        with open(src_dev_filename, 'rb') as src_file:
+            if dst_dev.remote(recv_file_from_host, src_file, dst_dev_filename,
+                              filesize, xfer_func=send_file_to_remote):
+                return auto(remove_file, src_filename, False, False)
+            else:
+                return False
+                
+
+    # Moving from remote A to remote B. We first copy the file
+    # from remote A to the host and then from the host to remote B
+    host_temp_file = tempfile.TemporaryFile()
+    if src_dev.remote(send_file_to_host, src_dev_filename, host_temp_file,
+                      filesize, xfer_func=recv_file_from_remote):
+        host_temp_file.seek(0)
+        if dst_dev.remote(recv_file_from_host, host_temp_file, dst_dev_filename,
+                          filesize, xfer_func=send_file_to_remote):
+            return auto(remove_file, src_filename, False, False)
+        else:
+            return False
+        
+    return False
+
 def eval_str(string):
     """Executes a string containing python code."""
     output = eval(string)
@@ -1732,7 +1854,7 @@ class Shell(cmd.Cmd):
     def onecmd(self, line):
         """Override onecmd.
 
-        1 - So we don't have to have a do_EOF method.
+        1 - So we don't have to have a EOF method.
         2 - So we can strip comments
         3 - So we can track line numbers
         """
@@ -2106,6 +2228,85 @@ class Shell(cmd.Cmd):
         else:
             print_err('Unrecognized connection TYPE: {}'.format(connect_type))
 
+    argparse_mv = (
+        add_arg(
+            '-n', '--no-clobber',
+            dest='no_clobber',
+            action='store_true',
+            help='Never replace an existing destination file',
+            default=False
+        ),
+        add_arg(
+            '-f', '--force',
+            dest='force',
+            action='store_true',
+            help='Always replace a destination file if it exists',
+            default=False
+        ),
+        add_arg(
+            'filenames',
+            metavar='FILE',
+            nargs='+',
+            help='files and directories to move'
+        ),
+    )
+    
+    def complete_mv(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
+
+    def do_mv(self, line):
+        """mv SOURCE DEST             move or rename a single file
+       mv SOURCE... DIRECTORY     move multiple files or directories to a destination directory
+       mv PATTERN DEST            move one or more files to a destination of the correct type
+       options -n --no-clobber    To determnine the action if the destination exists
+               -f --force
+        """
+
+        args = self.line_to_args(line)
+        mv_mode = None
+        if args.force and args.no_clobber:
+            print_err('--no-clobber or --force can only be specified')
+            return
+        if args.force:
+            mv_mode = 'f'
+        elif args.no_clobber:
+            mv_mode = 'n'
+        else:
+            mv_mode = ' '
+
+        if len(args.filenames) < 2:
+            print_err('Missing destination file')
+            return
+
+        dst_filename = args.filenames[-1]
+        src_filenames = args.filenames[:-1]
+        dst_resolved = resolve_path(dst_filename)
+        dst_mode = auto(get_mode, dst_resolved)
+        sfn = src_filenames[0]
+        if is_pattern(sfn):
+            if len(src_filenames) > 1:
+                print_err("Usage: mv PATTERN DIRECTORY")
+                return
+            src_filenames = process_pattern(sfn)
+            if src_filenames is None:
+                return
+        
+        if len(src_filenames) > 1:
+            if not mode_isdir(dst_mode):
+                err = "Destination {} is not a directory"
+                print_err(err.format(dst_filename))
+                return
+
+        for src_filename in src_filenames:
+            if is_pattern(src_filename):
+                print_err("Only one pattern permitted.")
+                return
+            
+            if not mv(resolve_path(src_filename), dst_resolved, mv_mode):
+                err = "Unable to move '{}' to '{}'"
+                print_err(err.format(src_filename, dst_filename))
+                break
+            
     def complete_cp(self, text, line, begidx, endidx):
         return self.filename_complete(text, line, begidx, endidx)
 

@@ -535,6 +535,12 @@ Synchronisation is performed by comparing the date and time of source
 and destination files. Files are copied if the source is newer than the
 destination.
 
+Synchronisation can be configured to ignore files such as documents,
+usually to conserve space on the destination. This is done by means
+of a file named .rshell-ignore. This should comprise a list of files
+and/or subdirectories with each item on a separate line. If such a
+file is found in a source directory, items found in the file's
+directory that match its contents will not be synchronised.
 
 shell
 -----

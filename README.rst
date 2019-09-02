@@ -95,34 +95,39 @@ following displayed:
 
 ::
 
-    usage: rshell [options] [command]
+usage: rshell [options] [command]
 
     Remote Shell for a MicroPython board.
 
     positional arguments:
-      cmd                   Optional command to execute
+    cmd                   Optional command to execute
 
     optional arguments:
-      -h, --help            show this help message and exit
-      -b BAUD, --baud BAUD  Set the baudrate used (default = 115200)
-      --buffer-size BUFFER_SIZE
-                            Set the buffer size used for transfers (default = 512)
-      -p PORT, --port PORT  Set the serial port to use (default '/dev/ttyACM0')
-      --rts RTS             Set the RTS state (default '')
-      --dtr DTR             Set the DTR state (default '')
-      -u USER, --user USER  Set username to use (default 'micro')
-      -w PASSWORD, --password PASSWORD
+    -h, --help            show this help message and exit
+    -b BAUD, --baud BAUD  Set the baudrate used (default = 115200)
+    --buffer-size BUFFER_SIZE
+                            Set the buffer size used for transfers (default = 512
+                            for USB, 32 for UART)
+    -p PORT, --port PORT  Set the serial port to use (default 'None')
+    --rts RTS             Set the RTS state (default '')
+    --dtr DTR             Set the DTR state (default '')
+    -u USER, --user USER  Set username to use (default 'micro')
+    -w PASSWORD, --password PASSWORD
                             Set password to use (default 'python')
-      -e EDITOR, --editor EDITOR
+    -e EDITOR, --editor EDITOR
                             Set the editor to use (default 'vi')
-      -f FILENAME, --file FILENAME
+    -f FILENAME, --file FILENAME
                             Specifies a file of commands to process.
-      -d, --debug           Enable debug features
-      -n, --nocolor         Turn off colorized output
-      --wait                How long to wait for serial port
-      --binary              Enable binary file transfer
-      --timing              Print timing information about each command
-      --quiet               Turns off some output (useful for testing)
+    -m MACRO_MODULE, --macros MACRO_MODULE
+                            Specify a macro module.
+    -d, --debug           Enable debug features
+    -n, --nocolor         Turn off colorized output
+    -l, --list            Display serial ports
+    -a, --ascii           ASCII encode binary files for transfer
+    --wait WAIT           Seconds to wait for serial port
+    --timing              Print timing information about each command
+    -V, --version         Reports the version and exits.
+    --quiet               Turns off some output (useful for testing)
 
     You can specify the default serial port using the RSHELL_PORT environment
     variable.
@@ -162,6 +167,12 @@ be used.
 
 Specifies a file of rshell commands to process. This allows you to
 create a script which executes any valid rshell commands.
+
+-m MACRO_MODULE, --macros MACRO_MODULE
+--------------------------------------
+
+Specifies a Python module containing macros which may be expanded at
+the rshell prompt. See below for the file format and its usage.
 
 -n, --nocolor
 -------------
@@ -559,6 +570,71 @@ This will invoke a command, and return back to rshell. Example:
     !make deploy
 
 will flash the pyboard.
+
+lm
+--
+
+::
+
+    usage lm [macro_name]
+
+    If issued without an arg lists available macros, otheriwse lists the
+    specified macro.
+
+m
+-
+
+::
+
+    usage m macro_name [arg0 [arg1 [args...]]]
+
+    Expands the named macro, passing it any supplied positional args,
+    and executes it.
+
+Macros
+======
+
+Macros enable short strings to be expanded into longer ones and enable
+common names to be used to similar or different effect across multiple
+projects.
+
+If rshell is invoked with -m MACRO_MODULE argument the specified Python
+module will be imported (assuming it is on the Python path).
+
+The module should contain a dict named macros. Each key should be a string
+specifying the name; the value may be a string (being the expansion) or a
+2-tuple. In the case of a tuple the expansion will element[0], with
+element[1] being an arbitrary help string.
+
+The macro name and expansion string may not contain whitespace. The
+expansion string may contain argument specifiers compatible with the
+Python string format operator. Consider this module:
+
+::
+
+    from global_rshell_macros import macros  # Common across projects
+    # Macros specific to the foo project
+    macros['sync'] = 'rsync foo/ /flash/foo/', 'Sync foo project'
+    macros['run'] = 'repl ~ import foo.demos.{}', 'Run foo demo e.g. > m run hst'
+    macros['proj'] = 'ls -l /flash/foo/{}', 'List directory in foo project.'
+    macros['cpf'] = 'cp foo/py/{} /flash/foo/py/; repl ~ import foo.demos.{}', 'Copy a py file, run a demo'
+    macros['cpd'] = 'cp foo/demos/{0}.py /flash/foo/demos/; repl ~ import foo.demos.{0}', 'Copy a demo file and run it'
+
+If at the rshell prompt we issue 
+
+::
+
+    > m cpd hst
+
+this will expand to
+
+::
+
+    > cp foo/demos/hst.py /flash/foo/demos/; repl ~ import foo.demos.hst
+
+If no args are passed, rshell will expand the macro with argument specifiers
+removed. This enables macros such as 'proj' above to run with zero or one
+argument.
 
 Pattern Matching
 ================

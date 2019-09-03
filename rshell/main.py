@@ -2040,6 +2040,9 @@ class Shell(cmd.Cmd):
         else:
             print('No boards connected')
 
+    def complete_m(self, text, line, begidx, endidx):  # Assume macro works on filenames for completion.
+        return self.filename_complete(text, line, begidx, endidx)
+
     def do_m(self, line):
         """m macro_name [[arg0] arg1]...
 

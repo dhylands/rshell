@@ -95,7 +95,7 @@ following displayed:
 
 ::
 
-usage: rshell [options] [command]
+    usage: rshell [options] [command]
 
     Remote Shell for a MicroPython board.
 

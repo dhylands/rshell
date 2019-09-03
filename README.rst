@@ -607,9 +607,9 @@ specifying the name; the value may be a string (being the expansion) or a
 2-tuple. In the case of a tuple the expansion will element[0], with
 element[1] being an arbitrary help string.
 
-The macro name and expansion string may not contain whitespace. Multi-line
-expansions are supported by virtue of rshell's ; operator: see the mv
-macro below.
+The macro name must conform to Python rules for dict keys. The expansion
+string may not contain newline characters. Multi-line expansions are
+supported by virtue of rshell's ; operator: see the mv macro below.
 
 The expansion string may contain argument specifiers compatible with the
 Python string format operator. This enables arguments passed to the macro
@@ -651,9 +651,11 @@ this will expand to
 
     > cp foo/demos/hst.py /flash/foo/demos/; repl ~ import foo.demos.hst
 
-If no args are passed, rshell will expand the macro with argument specifiers
-removed. This enables macros such as 'proj' above to run with zero or one
-argument.
+In general args should be regarded as mandatory. Any excess args supplied
+will be ignored. In the case where no args are passed to a macro that
+expects some, the macro will be expanded and run with each placeholder
+replaced with an empty string. This enables directory listing macros such as
+'proj' above to run with zero or one argument.
 
 Pattern Matching
 ================

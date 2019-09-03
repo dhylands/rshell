@@ -2049,7 +2049,10 @@ class Shell(cmd.Cmd):
            Expand a macro with args and run.
         """
         msg = '''usage m MACRO [[[arg0] arg1] ...]
-        Run macro MACRO with any required arguments.'''
+        Run macro MACRO with any required arguments.
+        In general args should be regarded as mandatory. In the case where
+        no args are passed to a macro expecting some the macro will be run
+        with each placeholder replaced with an empty string.'''
         tokens = [x for x in line.split(' ') if x]
         cmd = tokens[0]
         if cmd in macros:
@@ -2068,7 +2071,7 @@ class Shell(cmd.Cmd):
                 to_run = go.format('')
             self.print(to_run)
             self.onecmd(to_run)
-        elif cmd == '-h' or l == '--help':
+        elif cmd == '-h' or cmd == '--help':
             self.print(msg)
         else:
             print_err('Unknown macro', cmd)

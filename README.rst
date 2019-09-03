@@ -596,7 +596,8 @@ Macros
 
 Macros enable short strings to be expanded into longer ones and enable
 common names to be used to similar or different effect across multiple
-projects.
+projects. They also enable rshell functionality to be enhanced, e.g.
+adding an mv command to move files.
 
 If rshell is invoked with -m MACRO_MODULE argument the specified Python
 module will be imported (assuming it is on the Python path).
@@ -606,14 +607,32 @@ specifying the name; the value may be a string (being the expansion) or a
 2-tuple. In the case of a tuple the expansion will element[0], with
 element[1] being an arbitrary help string.
 
-The macro name and expansion string may not contain whitespace. The
-expansion string may contain argument specifiers compatible with the
-Python string format operator. Consider this module:
+The macro name and expansion string may not contain whitespace. Multi-line
+expansions are supported by virtue of rshell's ; operator: see the mv
+macro below.
+
+The expansion string may contain argument specifiers compatible with the
+Python string format operator. This enables arguments passed to the macro
+to be expanded in ways which are highly flexible.
+
+Consider a global macro module:
 
 ::
 
-    from global_rshell_macros import macros  # Common across projects
-    # Macros specific to the foo project
+    macros = {}
+    macros['..'] = 'cd ..'
+    macros['...'] = 'cd ../..'
+    macros['ll'] = 'ls -al {}', 'List a directory (default current one)'
+    macros['lf'] = 'ls -al /flash/{}', 'List contents of target flash'
+    macros['lsd'] = 'ls -al /sd/{}'
+    macros['lpb'] = 'ls -al /pyboard/{}'
+    macros['mv'] = 'cp {0} {1}; rm {0}', 'File move command'
+
+A module specific to the foo project:
+
+::
+
+    from global_rshell_macros import macros
     macros['sync'] = 'rsync foo/ /flash/foo/', 'Sync foo project'
     macros['run'] = 'repl ~ import foo.demos.{}', 'Run foo demo e.g. > m run hst'
     macros['proj'] = 'ls -l /flash/foo/{}', 'List directory in foo project.'

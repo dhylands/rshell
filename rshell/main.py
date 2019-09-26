@@ -151,6 +151,8 @@ QUIET = False
 RTS = ''
 DTR = ''
 
+MACFILE_NAME = 'rshell_macros'
+
 # It turns out that just because pyudev is installed doesn't mean that
 # it can actually be used. So we only bother to try if we're running
 # under linux.
@@ -2736,14 +2738,18 @@ class Shell(cmd.Cmd):
         rsync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
              print_func=pf, recursed=False, sync_hidden=args.all)
 
-def load_macros(mod_name):
+def load_macros(mod_name=None):
     """Update the global macros dict.
     Validate on import to avoid runtime errors as far as possible.
     """
+    default = mod_name is None
+    if default:
+        mod_name = MACFILE_NAME
     try:
         mmod = importlib.import_module(mod_name)
     except ImportError:
-        print("Can't import macro module", mod_name)
+        if not default:
+            print("Can't import macro module", mod_name)
         return False
     except:
         print("Macro module {} is invalid".format(mod_name))
@@ -2966,6 +2972,8 @@ def real_main():
             global FAKE_INPUT_PROMPT
             FAKE_INPUT_PROMPT = True
 
+    if load_macros():  # Attempt to load default macro module
+        print('Default macro file {} loaded OK.'.format(MACFILE_NAME))
     if args.macro_module:  # Attempt to load a macro module
         if load_macros(args.macro_module):
             print('Macro file {} loaded OK.'.format(args.macro_module))

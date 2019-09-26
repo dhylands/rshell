@@ -590,14 +590,21 @@ Macros
 Macros enable short strings to be expanded into longer ones and enable
 common names to be used to similar or different effect across multiple
 projects. They also enable rshell functionality to be enhanced, e.g.
-adding an mv command to move files.
+by adding an mv command to move files.
 
-If rshell is invoked with -m MACRO_MODULE argument the specified Python
-module will be imported (assuming it is on the Python path).
+Macros are defined by macro modules: these comprise Python code. Their
+filenames must conform to Python rules and they should be located on the
+Python path.
 
-The module should contain a dict named macros. Each key should be a string
+If a module named rshell_macros.py is found, this will be imported.
+
+If rshell is invoked with -m MACRO_MODULE argument, the specified Python
+module will (if found) be imported and its macros appended to any in
+rshell_macros.py.
+
+Macro modules should contain a dict named macros. Each key should be a string
 specifying the name; the value may be a string (being the expansion) or a
-2-tuple. In the case of a tuple the expansion will element[0], with
+2-tuple. In the case of a tuple, element[0] is the expansion with
 element[1] being an arbitrary help string.
 
 The macro name must conform to Python rules for dict keys. The expansion
@@ -608,7 +615,13 @@ The expansion string may contain argument specifiers compatible with the
 Python string format operator. This enables arguments passed to the macro
 to be expanded in ways which are highly flexible.
 
-Consider a global macro module:
+Because macro modules contain Python code there are a variety of ways to
+configure them: for example macro modules can impport other macro modules.
+One approach is to use rshell_macros.py to define global macros applicable
+to all projects with project-specific macros being appended with the -m
+command line argument.
+
+rshell_macros.py:
 
 ::
 
@@ -625,7 +638,6 @@ A module specific to the foo project:
 
 ::
 
-    from global_rshell_macros import macros
     macros['sync'] = 'rsync foo/ /flash/foo/', 'Sync foo project'
     macros['run'] = 'repl ~ import foo.demos.{}', 'Run foo demo e.g. > m run hst'
     macros['proj'] = 'ls -l /flash/foo/{}', 'List directory in foo project.'

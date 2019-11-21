@@ -740,7 +740,10 @@ def get_stat(filename):
 def listdir(dirname):
     """Returns a list of filenames contained in the named directory."""
     import os
-    return os.listdir(dirname)
+    try:
+        return os.listdir(dirname)
+    except TypeError:
+        return os.listdir()
 
 
 def listdir_matches(match):

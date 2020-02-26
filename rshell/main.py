@@ -942,20 +942,27 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
 def set_time(rtc_time):
     rtc = None
     try:
-        # Pyboard (pyboard doesn't have machine.RTC())
+        # Pyboard (pyboard doesn't have machine.RTC()).
+        # The pyb.RTC.datetime function takes the arguments in the order:
+        # (year, month, day, weekday, hour, minute, second, subseconds)
+        # http://docs.micropython.org/en/latest/library/pyb.RTC.html#pyb.RTC.datetime
         import pyb
         rtc = pyb.RTC()
         rtc.datetime(rtc_time)
     except:
+        # machine.RTC takes the arguments in a slightly different order:
+        # (year, month, day, hour, minute, second[, microsecond[, tzinfo]])
+        # http://docs.micropython.org/en/latest/library/machine.RTC.html#machine.RTC.init
+        rtc_time2 = (rtc_time[0], rtc_time[1], rtc_time[2], rtc_time[4], rtc_time[5], rtc_time[6])
         try:
             import machine
             rtc = machine.RTC()
             try:
                 # ESP8266 uses rtc.datetime() rather than rtc.init()
-                rtc.datetime(rtc_time)
+                rtc.datetime(rtc_time2)
             except:
                 # ESP32 (at least Loboris port) uses rtc.init()
-                rtc.init(rtc_time)
+                rtc.init(rtc_time2)
         except:
             pass
 

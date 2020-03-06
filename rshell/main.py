@@ -932,6 +932,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
                       "'{}' is a directory. Ignoring"
                 print_err(msg.format(src_filename, dst_filename))
             else:
+                print_func('Checking {}'.format(dst_filename))
                 if stat_mtime(src_stat) > stat_mtime(dst_stat):
                     msg = "{} is newer than {} - copying"
                     print_func(msg.format(src_filename, dst_filename))

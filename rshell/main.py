@@ -680,6 +680,14 @@ def cp(src_filename, dst_filename):
     return False
 
 
+def date():
+    import time
+    tm = time.localtime()
+    dow = ('Mon', 'Tue', 'Web', 'Thu', 'Fri', 'Sat', 'Sun')
+    mon = ('???', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+    return repr('{} {} {:2d} {:02d}:{:02d}:{:02d} {}'.format(dow[tm[6]], mon[tm[1]], tm[2], tm[3], tm[4], tm[5], tm[0]))
+
+
 def eval_str(string):
     """Executes a string containing python code."""
     output = eval(string)
@@ -2187,6 +2195,34 @@ class Shell(cmd.Cmd):
                 err = "Unable to copy '{}' to '{}'"
                 print_err(err.format(src_filename, dst_filename))
                 break
+
+    argparse_date = (
+        add_arg(
+            '-b', '--board',
+            dest='board',
+            action='store',
+            help='Specify which board to get the date for',
+            default=None
+        ),
+    )
+
+    def do_date(self, line):
+        """date [-b boardname]
+
+           Displays the current date and time for the board indicated by the -b option,
+           or, if no board is specified, then it will use the current directory to
+           determine the board.
+        """
+        args = self.line_to_args(line)
+        if args.board is None:
+            dev, _ = get_dev_and_path(cur_dir)
+        else:
+            dev = find_device_by_name(args.board)
+        if dev is None:
+            self.print('Host:', eval(date()))
+        else:
+            self.print('{}: {}'.format(dev.name, trim(dev.remote_eval(date))))
+
 
     def do_echo(self, line):
         """echo TEXT...

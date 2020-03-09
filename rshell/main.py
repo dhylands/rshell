@@ -951,22 +951,38 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
 def set_time(rtc_time):
     rtc = None
     try:
-        # Pyboard (pyboard doesn't have machine.RTC())
+        # Pyboard (pyboard doesn't have machine.RTC()).
+        # The pyb.RTC.datetime function takes the arguments in the order:
+        # (year, month, day, weekday, hour, minute, second, subseconds)
+        # http://docs.micropython.org/en/latest/library/pyb.RTC.html#pyb.RTC.datetime
         import pyb
         rtc = pyb.RTC()
         rtc.datetime(rtc_time)
     except:
         try:
+            import pycom
+            # PyCom's machine.RTC takes its arguments in a slightly different order
+            # than the official machine.RTC.
+            # (year, month, day, hour, minute, second[, microsecond[, tzinfo]])
+            # https://docs.pycom.io/firmwareapi/pycom/machine/rtc/#rtc-init-datetime-none-source-rtc-internal-rc
+            rtc_time2 = (rtc_time[0], rtc_time[1], rtc_time[2], rtc_time[4], rtc_time[5], rtc_time[6])
             import machine
             rtc = machine.RTC()
-            try:
-                # ESP8266 uses rtc.datetime() rather than rtc.init()
-                rtc.datetime(rtc_time)
-            except:
-                # ESP32 (at least Loboris port) uses rtc.init()
-                rtc.init(rtc_time)
+            rtc.init(rtc_time2)
         except:
-            pass
+            try:
+                # The machine.RTC documentation was incorrect and doesn't agree with the code, so no link
+                # is presented here. The order of the arguments is the same as the pyboard.
+                import machine
+                rtc = machine.RTC()
+                try:
+                    # ESP8266 uses rtc.datetime() rather than rtc.init()
+                    rtc.datetime(rtc_time)
+                except:
+                    # ESP32 (at least Loboris port) uses rtc.init()
+                    rtc.init(rtc_time)
+            except:
+                pass
 
 
 # 0x0D's sent from the host get transformed into 0x0A's, and 0x0A sent to the

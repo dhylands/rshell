@@ -49,6 +49,23 @@ Debian/Ubuntu users can get pip3 using:
 
     sudo apt-get install python3-pip
 
+Serial Port Permissions (linux)
+===============================
+
+Under linux, the USB serial ports are owned by root and typically have a group of dialout (for ubuntu).
+Different unix distros may use a slightly different group name. In order for rshell (or any terminal emulator)
+to access the serial port, you'll need to ensure that your user account has sufficient priviledge.
+One way to do this is to ensure that your user is added to the dialout group, using a command like:
+
+::
+
+    sudo usermod -a -G dialout $USER
+
+
+Another way, is to use udev rules to modify the permissions on the serial port. There are some instructions
+on the [micropython wiki](https://github.com/micropython/micropython/wiki/Board-STM32F407-Discovery#programming-from-linux-via-dfu)
+that you can use to setup your udev rules (you don't need to install dfu-utils just to update the permissions).
+
 Sample Session
 ==============
 

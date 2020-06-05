@@ -1732,6 +1732,9 @@ class Shell(cmd.Cmd):
         self.quit_serial_reader = False
         readline.set_completer_delims(DELIMS)
 
+        # add a method to call the user's editor by its name
+        setattr(self, 'do_' + EDITOR, self.do_edit)
+         
         self.set_prompt()
 
     def set_prompt(self):

@@ -392,7 +392,7 @@ edit
 
 ::
 
-    edit filename
+    edit FILENAME
 
 If the file is on a pyboard, it copies the file to host, invokes an
 editor and if any changes were made to the file, it copies it back to
@@ -402,6 +402,8 @@ The editor which is used defaults to vi, but can be overridden using
 either the --editor command line option when rshell.py is invoked, or by
 using the RSHELL\_EDITOR, VISUAL or EDITOR environment variables (they
 are tried in the order listed).
+
+The default editor command can be used in place of :code:`edit` (see :code:`vi` below)
 
 filesize
 --------
@@ -570,6 +572,21 @@ This will invoke a command, and return back to rshell. Example:
     !make deploy
 
 will flash the pyboard.
+
+vi (or custom editor command)
+-----------------------------
+
+::
+
+    vi FILENAME
+    
+Alias of edit.
+
+Use the editor set by command line option or environment variables, or vi
+as default (see :code:`edit` above). If nano is the default editor, :code:`nano FILENAME` is an alias
+of :code:`edit FILENAME`.
+
+Run :code:`help` command  the see the editor command in use.
 
 Pattern Matching
 ================

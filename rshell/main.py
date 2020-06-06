@@ -1733,7 +1733,7 @@ class Shell(cmd.Cmd):
         readline.set_completer_delims(DELIMS)
 
         # add a method to call the user's editor by its name
-        setattr(self, 'do_' + EDITOR, self.do_edit)
+        setattr(self.__class__, 'do_' + EDITOR, self.do_edit)
          
         self.set_prompt()
 

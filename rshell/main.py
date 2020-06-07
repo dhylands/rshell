@@ -1734,6 +1734,7 @@ class Shell(cmd.Cmd):
 
         # add a method to call the user's editor by its name
         setattr(self.__class__, 'do_' + EDITOR, self.do_edit)
+        setattr(self.__class__, 'complete_' + EDITOR, self.complete_edit)
          
         self.set_prompt()
 

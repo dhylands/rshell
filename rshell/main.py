@@ -50,6 +50,7 @@ import threading
 import shlex
 import itertools
 from serial.tools import list_ports
+import types
 
 import traceback
 

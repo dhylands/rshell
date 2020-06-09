@@ -1733,7 +1733,9 @@ class Shell(cmd.Cmd):
         readline.set_completer_delims(DELIMS)
 
         # add a method to call the user's editor by its name
-        setattr(self.__class__, 'do_' + EDITOR, self.do_edit)
+        user_editor_func = types.FunctionType(Shell.do_edit.__code__, Shell.do_edit.__globals__, 'do_' + EDITOR, Shell.do_edit.__defaults__, Shell.do_edit.__closure__)
+        user_editor_func.__doc__ = self.do_edit.__doc__.replace('edit', EDITOR, 1)
+        setattr(self.__class__, 'do_' + EDITOR, user_editor_func)
         setattr(self.__class__, 'complete_' + EDITOR, self.complete_edit)
          
         self.set_prompt()

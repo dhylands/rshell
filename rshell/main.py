@@ -2260,7 +2260,7 @@ class Shell(cmd.Cmd):
         return self.filename_complete(text, line, begidx, endidx)
 
     def do_edit(self, line):
-        """edit FILE
+        """edit FILENAME
 
            Copies the file locally, launches an editor to edit the file.
            When the editor exits, if the file was modified then its copied

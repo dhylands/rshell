@@ -238,6 +238,9 @@ def is_micropython_usb_device(port):
     # Check for Teensy VID:PID
     if usb_id.startswith('usb vid:pid=16c0:0483'):
         return True
+    # Check for LEGO Technic Large Hub
+    if usb_id.startswith('usb vid:pid=0694:0010'):
+        return True
     return False
 
 

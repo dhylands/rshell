@@ -308,7 +308,7 @@ file or using the :code:`echo` command, e.g.
 
 ::
 
-    echo name="myboard" > /pyboard/board.py
+    echo 'name="myboard"' > /pyboard/board.py
 
 (Remember to exit rshell and re-enter to see the change).
 

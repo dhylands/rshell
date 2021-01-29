@@ -235,6 +235,9 @@ def is_micropython_usb_device(port):
     # values.
     if usb_id.startswith('usb vid:pid=f055:980'):
         return True
+    # Check Raspberry Pi Pico
+    if usb_id.startswith('usb vid:pid=2e8a:0005'):
+        return True
     # Check for Teensy VID:PID
     if usb_id.startswith('usb vid:pid=16c0:0483'):
         return True

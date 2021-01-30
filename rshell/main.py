@@ -1017,6 +1017,7 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
             # worry about resetting it ourselves
             usb.setinterrupt(-1)
     try:
+        import time
         with open(dst_filename, dst_mode) as dst_file:
             bytes_remaining = filesize
             if not HAS_BUFFER:
@@ -1035,6 +1036,7 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
                         bytes_read = sys.stdin.buffer.readinto(read_buf, read_size)
                     else:
                         bytes_read = sys.stdin.readinto(read_buf, read_size)
+                    time.sleep_ms(20)
                     if bytes_read > 0:
                         write_buf[buf_index:bytes_read] = read_buf[0:bytes_read]
                         buf_index += bytes_read
@@ -2214,6 +2216,7 @@ class Shell(cmd.Cmd):
                 dst_filename = dst_dirname + '/' + os.path.basename(src_filename)
             else:
                 dst_filename = dst_dirname
+            self.print("Copying '{}' to '{}' ...".format(src_filename, dst_filename))
             if not cp(src_filename, dst_filename):
                 err = "Unable to copy '{}' to '{}'"
                 print_err(err.format(src_filename, dst_filename))

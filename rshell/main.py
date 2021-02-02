@@ -954,6 +954,15 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
                         cp(src_filename, dst_filename)
 
 
+# rtc_time[0] - year    4 digit
+# rtc_time[1] - month   1..12
+# rtc_time[2] - day     1..31
+# rtc_time[3] - weekday 1..7 1=Monday
+# rtc_time[4] - hour    0..23
+# rtc_time[5] - minute  0..59
+# rtc_time[6] - second  0..59
+# rtc_time[7] - yearday 1..366
+# rtc_time[8] - isdst   0, 1, or -1
 def set_time(rtc_time):
     rtc = None
     try:
@@ -988,7 +997,17 @@ def set_time(rtc_time):
                     # ESP32 (at least Loboris port) uses rtc.init()
                     rtc.init(rtc_time)
             except:
-                pass
+                # Check for the Raspberry Pi Pico - machine.RTC doesn't exist
+                try:
+                    import os
+                    if os.uname().sysname == 'rp2':
+                        setup_0 = rtc_time[0] << 12 | rtc_time[1] << 8 | rtc_time[2]
+                        setup_1 = (rtc_time[3] % 7) << 24 | rtc_time[4] << 16 | rtc_time[5] << 8 | rtc_time[6]
+                        machine.mem32[0x4005c004] = setup_0
+                        machine.mem32[0x4005c008] = setup_1
+                        machine.mem8[0x4005c00c] |= 0x10
+                except:
+                    pass
 
 
 # 0x0D's sent from the host get transformed into 0x0A's, and 0x0A sent to the

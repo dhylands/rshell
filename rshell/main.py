@@ -1005,7 +1005,7 @@ def set_time(rtc_time):
                         setup_1 = (rtc_time[3] % 7) << 24 | rtc_time[4] << 16 | rtc_time[5] << 8 | rtc_time[6]
                         machine.mem32[0x4005c004] = setup_0
                         machine.mem32[0x4005c008] = setup_1
-                        machine.mem8[0x4005c00c] |= 0x10
+                        machine.mem32[0x4005c00c] |= 0x10
                 except:
                     pass
 

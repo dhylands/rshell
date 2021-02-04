@@ -38,8 +38,10 @@ import binascii
 import calendar
 import cmd
 import inspect
-import os
+import io
 import fnmatch
+import os
+import re
 import select
 import serial
 import shutil
@@ -47,6 +49,8 @@ import socket
 import tempfile
 import time
 import threading
+import token
+import tokenize
 import shlex
 import itertools
 from serial.tools import list_ports
@@ -1364,6 +1368,40 @@ def connect_serial(port, baud=115200, wait=0):
     return True
 
 
+def strip_source(source):
+    """ Strip out comments and Docstrings from some python source code."""
+    mod = ""
+
+    prev_toktype = token.INDENT
+    last_lineno = -1
+    last_col = 0
+
+    tokgen = tokenize.generate_tokens(io.StringIO(source).readline)
+    for toktype, ttext, (slineno, scol), (elineno, ecol), ltext in tokgen:
+        if 0:   # Change to if 1 to see the tokens fly by.
+            print("%10s %-14s %-20r %r" % (
+                tokenize.tok_name.get(toktype, toktype),
+                "%d.%d-%d.%d" % (slineno, scol, elineno, ecol),
+                ttext, ltext
+                ))
+        if slineno > last_lineno:
+            last_col = 0
+        if scol > last_col:
+            mod += " " * (scol - last_col)
+        if toktype == token.STRING and prev_toktype == token.INDENT:
+            # Docstring
+            mod = mod.rstrip(' \t\n')
+        elif toktype == tokenize.COMMENT:
+            # Comment
+            mod = mod.rstrip(' \t\n')
+        else:
+            mod += ttext
+        prev_toktype = toktype
+        last_col = ecol
+        last_lineno = elineno
+    return mod
+
+
 class SmartFile(object):
     """Class which implements a write method which can takes bytes or str."""
 
@@ -1489,6 +1527,7 @@ class Device(object):
         else:
           func_name = func.__name__
           func_src = inspect.getsource(func)
+        func_src = strip_source(func_src)
         args_arr = [remote_repr(i) for i in args]
         kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k, v in kwargs.items()]
         func_src += 'output = ' + func_name + '('

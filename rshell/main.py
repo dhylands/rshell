@@ -1022,19 +1022,13 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
     import os
     if HAS_BUFFER:
         try:
-            import pyb
-            usb = pyb.USB_VCP()
-        except:
-            try:
-                import machine
-                usb = machine.USB_VCP()
-            except:
-                usb = None
-        if usb and usb.isconnected():
+            import micropython
             # We don't want 0x03 bytes in the data to be interpreted as a Control-C
             # This gets reset each time the REPL runs a line, so we don't need to
             # worry about resetting it ourselves
-            usb.setinterrupt(-1)
+            micropython.kbd_intr(-1)
+        except:
+            pass
     try:
         import time
         with open(dst_filename, dst_mode) as dst_file:

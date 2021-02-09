@@ -145,6 +145,7 @@ HAS_BUFFER = False
 IS_UPY = False
 DEBUG = False
 USB_BUFFER_SIZE = 512
+RPI_PICO_USB_BUFFER_SIZE = 128
 UART_BUFFER_SIZE = 32
 BUFFER_SIZE = USB_BUFFER_SIZE
 QUIET = False
@@ -241,6 +242,8 @@ def is_micropython_usb_device(port):
         return True
     # Check Raspberry Pi Pico
     if usb_id.startswith('usb vid:pid=2e8a:0005'):
+        global USB_BUFFER_SIZE
+        USB_BUFFER_SIZE = RPI_PICO_USB_BUFFER_SIZE
         return True
     # Check for Teensy VID:PID
     if usb_id.startswith('usb vid:pid=16c0:0483'):
@@ -324,6 +327,8 @@ def autoscan():
     """
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
+            global BUFFER_SIZE
+            BUFFER_SIZE = USB_BUFFER_SIZE
             connect_serial(port[0])
 
 

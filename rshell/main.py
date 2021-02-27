@@ -733,8 +733,9 @@ def get_mode(filename):
         return 0
 
 
-def stat(filename):
-    """Returns os.stat for a given file, adjusting the timestamps as appropriate."""
+def lstat(filename):
+    """Returns os.lstat for a given file, adjusting the timestamps as appropriate.
+       This function will not follow symlinks."""
     import os
     try:
         # on the host, lstat won't try to follow symlinks
@@ -742,6 +743,22 @@ def stat(filename):
     except:
         rstat = os.stat(filename)
     return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
+
+
+def stat(filename):
+    """Returns os.stat for a given file, adjusting the timestamps as appropriate."""
+    import os
+    rstat = os.stat(filename)
+    return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
+
+
+def sysname():
+    """Returns the os.uname().sysname field."""
+    try:
+        import os
+        return repr(os.uname().sysname)
+    except:
+        return repr('unknown')
 
 
 def is_visible(filename):
@@ -756,6 +773,17 @@ def get_stat(filename):
     """
     try:
         return stat(filename)
+    except OSError:
+        return (0,) * 10
+
+
+@extra_funcs(lstat)
+def get_lstat(filename):
+    """Returns the stat array for a given file. Returns all 0's if the file
+       doesn't exist.
+    """
+    try:
+        return lstat(filename)
     except OSError:
         return (0,) * 10
 
@@ -796,6 +824,23 @@ def listdir_matches(match):
     matches = [add_suffix_if_dir(result_prefix + filename)
                for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
     return matches
+
+
+@extra_funcs(is_visible, lstat)
+def listdir_lstat(dirname, show_hidden=True):
+    """Returns a list of tuples for each file contained in the named
+       directory, or None if the directory does not exist. Each tuple
+       contains the filename, followed by the tuple returned by
+       calling os.stat on the filename.
+    """
+    import os
+    try:
+        files = os.listdir(dirname)
+    except OSError:
+        return None
+    if dirname == '/':
+        return list((file, lstat('/' + file)) for file in files if is_visible(file) or show_hidden)
+    return list((file, lstat(dirname + '/' + file)) for file in files if is_visible(file) or show_hidden)
 
 
 @extra_funcs(is_visible, stat)
@@ -864,7 +909,7 @@ def make_dir(dst_dir, dry_run, print_func, recursed):
     Issues error where necessary.
     """
     parent = os.path.split(dst_dir.rstrip('/'))[0] # Check for nonexistent parent
-    parent_files = auto(listdir_stat, parent) if parent else True # Relative dir
+    parent_files = auto(listdir_lstat, parent) if parent else True # Relative dir
     if dry_run:
         if recursed: # Assume success: parent not actually created yet
             print_func("Creating directory {}".format(dst_dir))
@@ -887,7 +932,7 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
     sstat = auto(get_stat, src_dir)
     smode = stat_mode(sstat)
     if mode_isfile(smode):
-        print_err('Source is a file not a directory.')
+        print_err('Source {} is a file not a directory.'.format(src_dir))
         return
 
     d_src = {}  # Look up stat tuple from name in current directory
@@ -1039,7 +1084,7 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
         except:
             pass
     try:
-        import time
+        #rp2: import time
         with open(dst_filename, dst_mode) as dst_file:
             bytes_remaining = filesize
             if not HAS_BUFFER:
@@ -1058,7 +1103,8 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
                         bytes_read = sys.stdin.buffer.readinto(read_buf, read_size)
                     else:
                         bytes_read = sys.stdin.readinto(read_buf, read_size)
-                    time.sleep_ms(20)
+                    # The following sleep is required for the RPi Pico
+                    #rp2: time.sleep_ms(20)
                     if bytes_read > 0:
                         write_buf[buf_index:bytes_read] = read_buf[0:bytes_read]
                         buf_index += bytes_read
@@ -1446,6 +1492,10 @@ class Device(object):
         self.has_buffer = False  # needs to be set for remote_eval to work
         self.time_offset = 0
         self.adjust_for_timezone = False
+        self.sysname = ''
+        QUIET or print('Retrieving sysname ... ', end='', flush=True)
+        self.sysname = self.remote_eval(sysname)
+        QUIET or print(self.sysname)
         if not ASCII_XFER:
             QUIET or print('Testing if sys.stdin.buffer exists ... ', end='', flush=True)
             self.has_buffer = self.remote_eval(test_buffer)
@@ -1532,6 +1582,8 @@ class Device(object):
         else:
           func_name = func.__name__
           func_src = inspect.getsource(func)
+        if self.sysname == 'rp2':
+            func_src = func_src.replace('#rp2: ', '')
         func_src = strip_source(func_src)
         args_arr = [remote_repr(i) for i in args]
         kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k, v in kwargs.items()]
@@ -2486,7 +2538,7 @@ class Shell(cmd.Cmd):
                 if filename is None: # An error was printed
                     continue
             files = []
-            ldir_stat = auto(listdir_stat, filename)
+            ldir_stat = auto(listdir_lstat, filename)
             if ldir_stat is None:
                 err = "Cannot access '{}': No such file or directory"
                 print_err(err.format(filename))

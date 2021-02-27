@@ -38,8 +38,10 @@ import binascii
 import calendar
 import cmd
 import inspect
-import os
+import io
 import fnmatch
+import os
+import re
 import select
 import serial
 import shutil
@@ -47,6 +49,8 @@ import socket
 import tempfile
 import time
 import threading
+import token
+import tokenize
 import shlex
 import itertools
 from serial.tools import list_ports
@@ -141,6 +145,7 @@ HAS_BUFFER = False
 IS_UPY = False
 DEBUG = False
 USB_BUFFER_SIZE = 512
+RPI_PICO_USB_BUFFER_SIZE = 128
 UART_BUFFER_SIZE = 32
 BUFFER_SIZE = USB_BUFFER_SIZE
 QUIET = False
@@ -235,6 +240,11 @@ def is_micropython_usb_device(port):
     # values.
     if usb_id.startswith('usb vid:pid=f055:980'):
         return True
+    # Check Raspberry Pi Pico
+    if usb_id.startswith('usb vid:pid=2e8a:0005'):
+        global USB_BUFFER_SIZE
+        USB_BUFFER_SIZE = RPI_PICO_USB_BUFFER_SIZE
+        return True
     # Check for Teensy VID:PID
     if usb_id.startswith('usb vid:pid=16c0:0483'):
         return True
@@ -317,6 +327,8 @@ def autoscan():
     """
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
+            global BUFFER_SIZE
+            BUFFER_SIZE = USB_BUFFER_SIZE
             connect_serial(port[0])
 
 
@@ -951,6 +963,15 @@ def rsync(src_dir, dst_dir, mirror, dry_run, print_func, recursed, sync_hidden):
                         cp(src_filename, dst_filename)
 
 
+# rtc_time[0] - year    4 digit
+# rtc_time[1] - month   1..12
+# rtc_time[2] - day     1..31
+# rtc_time[3] - weekday 1..7 1=Monday
+# rtc_time[4] - hour    0..23
+# rtc_time[5] - minute  0..59
+# rtc_time[6] - second  0..59
+# rtc_time[7] - yearday 1..366
+# rtc_time[8] - isdst   0, 1, or -1
 def set_time(rtc_time):
     rtc = None
     try:
@@ -985,7 +1006,17 @@ def set_time(rtc_time):
                     # ESP32 (at least Loboris port) uses rtc.init()
                     rtc.init(rtc_time)
             except:
-                pass
+                # Check for the Raspberry Pi Pico - machine.RTC doesn't exist
+                try:
+                    import os
+                    if os.uname().sysname == 'rp2':
+                        setup_0 = rtc_time[0] << 12 | rtc_time[1] << 8 | rtc_time[2]
+                        setup_1 = (rtc_time[3] % 7) << 24 | rtc_time[4] << 16 | rtc_time[5] << 8 | rtc_time[6]
+                        machine.mem32[0x4005c004] = setup_0
+                        machine.mem32[0x4005c008] = setup_1
+                        machine.mem32[0x4005c00c] |= 0x10
+                except:
+                    pass
 
 
 # 0x0D's sent from the host get transformed into 0x0A's, and 0x0A sent to the
@@ -1000,20 +1031,15 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
     import os
     if HAS_BUFFER:
         try:
-            import pyb
-            usb = pyb.USB_VCP()
-        except:
-            try:
-                import machine
-                usb = machine.USB_VCP()
-            except:
-                usb = None
-        if usb and usb.isconnected():
+            import micropython
             # We don't want 0x03 bytes in the data to be interpreted as a Control-C
             # This gets reset each time the REPL runs a line, so we don't need to
             # worry about resetting it ourselves
-            usb.setinterrupt(-1)
+            micropython.kbd_intr(-1)
+        except:
+            pass
     try:
+        import time
         with open(dst_filename, dst_mode) as dst_file:
             bytes_remaining = filesize
             if not HAS_BUFFER:
@@ -1032,6 +1058,7 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
                         bytes_read = sys.stdin.buffer.readinto(read_buf, read_size)
                     else:
                         bytes_read = sys.stdin.readinto(read_buf, read_size)
+                    time.sleep_ms(20)
                     if bytes_read > 0:
                         write_buf[buf_index:bytes_read] = read_buf[0:bytes_read]
                         buf_index += bytes_read
@@ -1346,6 +1373,40 @@ def connect_serial(port, baud=115200, wait=0):
     return True
 
 
+def strip_source(source):
+    """ Strip out comments and Docstrings from some python source code."""
+    mod = ""
+
+    prev_toktype = token.INDENT
+    last_lineno = -1
+    last_col = 0
+
+    tokgen = tokenize.generate_tokens(io.StringIO(source).readline)
+    for toktype, ttext, (slineno, scol), (elineno, ecol), ltext in tokgen:
+        if 0:   # Change to if 1 to see the tokens fly by.
+            print("%10s %-14s %-20r %r" % (
+                tokenize.tok_name.get(toktype, toktype),
+                "%d.%d-%d.%d" % (slineno, scol, elineno, ecol),
+                ttext, ltext
+                ))
+        if slineno > last_lineno:
+            last_col = 0
+        if scol > last_col:
+            mod += " " * (scol - last_col)
+        if toktype == token.STRING and prev_toktype == token.INDENT:
+            # Docstring
+            mod = mod.rstrip(' \t\n')
+        elif toktype == tokenize.COMMENT:
+            # Comment
+            mod = mod.rstrip(' \t\n')
+        else:
+            mod += ttext
+        prev_toktype = toktype
+        last_col = ecol
+        last_lineno = elineno
+    return mod
+
+
 class SmartFile(object):
     """Class which implements a write method which can takes bytes or str."""
 
@@ -1471,6 +1532,7 @@ class Device(object):
         else:
           func_name = func.__name__
           func_src = inspect.getsource(func)
+        func_src = strip_source(func_src)
         args_arr = [remote_repr(i) for i in args]
         kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k, v in kwargs.items()]
         func_src += 'output = ' + func_name + '('
@@ -2211,6 +2273,7 @@ class Shell(cmd.Cmd):
                 dst_filename = dst_dirname + '/' + os.path.basename(src_filename)
             else:
                 dst_filename = dst_dirname
+            self.print("Copying '{}' to '{}' ...".format(src_filename, dst_filename))
             if not cp(src_filename, dst_filename):
                 err = "Unable to copy '{}' to '{}'"
                 print_err(err.format(src_filename, dst_filename))

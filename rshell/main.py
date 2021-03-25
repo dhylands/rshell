@@ -1853,10 +1853,10 @@ class Shell(cmd.Cmd):
 
     def set_prompt(self):
         if self.stdin == sys.stdin:
-            prompt = PROMPT_COLOR + cur_dir + END_COLOR + '> '
+            prompt = PROMPT_COLOR + cur_dir + END_COLOR + '>'
             if FAKE_INPUT_PROMPT:
                 print(prompt, end='')
-                self.prompt = ''
+                self.prompt = ' '
             else:
                 self.prompt = prompt
         else:

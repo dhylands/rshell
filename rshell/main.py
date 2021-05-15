@@ -1488,7 +1488,10 @@ class DeviceError(Exception):
 class Device(object):
 
     def __init__(self, pyb):
+        self._remote_func_cache = set()
         self.pyb = pyb
+        self.check_pyb()
+        self.pyb.enter_raw_repl()
         self.has_buffer = False  # needs to be set for remote_eval to work
         self.time_offset = 0
         self.adjust_for_timezone = False
@@ -1585,6 +1588,10 @@ class Device(object):
         if self.sysname == 'rp2':
             func_src = func_src.replace('#rp2: ', '')
         func_src = strip_source(func_src)
+        if func_name not in self._remote_func_cache:
+          self._remote_func_cache.add(func_name)
+        else:
+          func_src = ""
         args_arr = [remote_repr(i) for i in args]
         kwargs_arr = ["{}={}".format(k, remote_repr(v)) for k, v in kwargs.items()]
         func_src += 'output = ' + func_name + '('
@@ -1607,15 +1614,15 @@ class Device(object):
             print('-----')
         self.check_pyb()
         try:
-            self.pyb.enter_raw_repl()
             self.check_pyb()
             output = self.pyb.exec_raw_no_follow(func_src)
             if xfer_func:
                 xfer_func(self, *args, **kwargs)
             self.check_pyb()
-            output, _ = self.pyb.follow(timeout=20)
+            output, err = self.pyb.follow(timeout=20)
+            if len(err):
+                raise DeviceError("Remote eval error:\n" + err.decode())
             self.check_pyb()
-            self.pyb.exit_raw_repl()
         except (serial.serialutil.SerialException, TypeError):
             self.close()
             raise DeviceError('serial port %s closed' % self.dev_name_short)
@@ -3067,6 +3074,9 @@ def real_main():
             shell.cmdloop(cmd_line)
         except KeyboardInterrupt:
             print('')
+    for i in DEVS:
+        if "pyb" in dir(i):
+            i.pyb.exit_raw_repl()
 
 def main():
     """This main function saves the stdin termios settings, calls real_main,

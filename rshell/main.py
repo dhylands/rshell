@@ -1695,7 +1695,8 @@ class DeviceSerial(Device):
         self.dev_name_long = '%s at %d baud' % (port, baud)
 
         try:
-            pyb = Pyboard(port, baudrate=baud, wait=wait, rts=RTS, dtr=DTR)
+            global suppress_reset
+            pyb = Pyboard(port, baudrate=baud, wait=wait, rts=RTS, dtr=DTR, suppress_reset=suppress_reset)
         except PyboardError as err:
             print(err)
             sys.exit(1)
@@ -2978,11 +2979,23 @@ def real_main():
         default=False
     )
     parser.add_argument(
+        "-s", "--suppress-reset",
+        dest="suppress_reset",
+        action="store_true",
+        help="Supresses soft-reset when entering raw REPL. Fixes 'could not enter raw repl'",
+        default=False
+    )
+    parser.add_argument(
         "cmd",
         nargs=argparse.REMAINDER,
         help="Optional command to execute"
     )
     args = parser.parse_args(sys.argv[1:])
+
+    # Globals are bad. But the alternative here is to pass this around many,
+    # many, many, many times before it gets to the one spot where it's used.
+    global suppress_reset
+    suppress_reset = args.suppress_reset
 
     if args.buffer_size is not None:
         BUFFER_SIZE = args.buffer_size

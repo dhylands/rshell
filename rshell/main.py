@@ -1092,6 +1092,10 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
             buf_size = BUFFER_SIZE
             write_buf = bytearray(buf_size)
             read_buf = bytearray(buf_size)
+
+            # Send XON (DC1) signal to the host to inform it we are ready to receive new data
+            sys.stdout.write('\x11')
+
             while bytes_remaining > 0:
                 read_size = min(bytes_remaining, buf_size)
                 buf_remaining = read_size
@@ -1130,6 +1134,13 @@ def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
     bytes_remaining = filesize
     save_timeout = dev.timeout
     dev.timeout = 2
+
+    # Block waiting for XON (DC1) signal from remote before sending data
+    xon = dev.read(1)
+    if not xon or xon != b'\x11':
+        sys.stderr.write("timed out expecting XON signal from remote, received: {!r}\n".format(xon))
+        sys.exit(2)
+
     while bytes_remaining > 0:
         if HAS_BUFFER:
             buf_size = BUFFER_SIZE

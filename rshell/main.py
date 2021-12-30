@@ -145,7 +145,7 @@ HAS_BUFFER = False
 IS_UPY = False
 DEBUG = False
 USB_BUFFER_SIZE = 512
-RPI_PICO_USB_BUFFER_SIZE = 128
+RPI_PICO_USB_BUFFER_SIZE = 32
 UART_BUFFER_SIZE = 32
 BUFFER_SIZE = USB_BUFFER_SIZE
 QUIET = False
@@ -327,8 +327,6 @@ def autoscan():
     """
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
-            global BUFFER_SIZE
-            BUFFER_SIZE = USB_BUFFER_SIZE
             connect_serial(port[0])
 
 

@@ -23,7 +23,7 @@ NOTE: rshell requires a fairly recent version of the MicroPython
 firmware, specifically one which contains the ubinascii.unhexlify
 command which was added May 19, 2015 (v1.4.3-28-ga3a14b9 or newer).
 
-If your verion of the firmware isn't new enough, then you'll see an
+If your version of the firmware isn't new enough, then you'll see an
 error message something like this:
 
 ::
@@ -308,7 +308,7 @@ file or using the :code:`echo` command, e.g.
 
 ::
 
-    echo name="myboard" > /pyboard/board.py
+    echo 'name="myboard"' > /pyboard/board.py
 
 (Remember to exit rshell and re-enter to see the change).
 

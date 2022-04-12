@@ -1070,7 +1070,10 @@ def set_time(rtc_time):
 def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
     """Function which runs on the pyboard. Matches up with send_file_to_remote."""
     import sys
-    import ubinascii
+    try:
+        import ubinascii
+    except:
+        import binascii as ubinascii
     import os
     if HAS_BUFFER:
         try:
@@ -1182,7 +1185,10 @@ def recv_file_from_remote(dev, src_filename, dst_file, filesize):
 def send_file_to_host(src_filename, dst_file, filesize):
     """Function which runs on the pyboard. Matches up with recv_file_from_remote."""
     import sys
-    import ubinascii
+    try:
+        import ubinascii
+    except:
+        import binascii as ubinascii
     try:
         with open(src_filename, 'rb') as src_file:
             bytes_remaining = filesize
@@ -1233,7 +1239,10 @@ def test_readinto():
 
 def test_unhexlify():
     """Checks the micropython firmware to see if ubinascii.unhexlify exists."""
-    import ubinascii
+    try:
+        import ubinascii
+    except:
+        import binascii as ubinascii
     try:
         _ = ubinascii.unhexlify
         return True

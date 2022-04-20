@@ -140,6 +140,8 @@ following displayed:
       --binary              Enable binary file transfer
       --timing              Print timing information about each command
       --quiet               Turns off some output (useful for testing)
+      -s, --suppress-reset  Supresses soft-reset when entering raw REPL. Fixes
+                            'could not enter raw repl'
 
     You can specify the default serial port using the RSHELL_PORT environment
     variable.
@@ -226,6 +228,16 @@ also be defaulted from the RSHELL_RTS environment variable.
 
 This option causes the Connecting messages printed when rshell starts to be
 suppressed. This is mostly useful for the test scripts.
+
+-s, --suppress-reset
+--------------------
+
+Rshell will soft-reboot the board in the process of getting to a raw REPL 
+prompt. Sometimes something will not unload properly and the soft-boot
+escalates to a hard reset. This will cause rshell to never reach the prompt,
+even though the raw REPL functionality works fine. If you see 'could not
+enter raw repl', try this option to see if supressing rshell's Ctrl-D
+soft-reset helps.
 
 --timing
 --------

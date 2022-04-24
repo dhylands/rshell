@@ -1735,6 +1735,8 @@ class DeviceSerial(Device):
         connected = False
         for _ in range(20):
             pyb.serial.write(b'\x03\r')
+            time.sleep(0.5)
+            pyb.serial.write(b'\x03\r')
             data = pyb.read_until(1, b'>>> ', timeout=0.1)
             if data.endswith(b'>>> '):
                 connected = True

@@ -1386,6 +1386,10 @@ def add_arg(*args, **kwargs):
 
 def connect(port, baud=115200, user='micro', password='python', wait=0):
     """Tries to connect automagically via network or serial."""
+    if port.startswith('/'):
+        connect_serial(port, baud=baud, wait=wait)
+        return
+
     try:
         ip_address = socket.gethostbyname(port)
         #print('Connecting to ip', ip_address)

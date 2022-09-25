@@ -792,6 +792,13 @@ def listdir(dirname):
     return os.listdir(dirname)
 
 
+def list_root_dirs():
+    """Returns a list of filenames contained in the named directory."""
+    import os
+    S_IFDIR = 0o40000
+    return [entry for entry in os.listdir('/') if os.stat('/' + entry)[0] & S_IFDIR]
+
+
 def listdir_matches(match):
     """Returns a list of filenames contained in the named directory.
        Only filenames which start with `match` will be returned.
@@ -1388,11 +1395,9 @@ def connect(port, baud=115200, user='micro', password='python', wait=0):
     """Tries to connect automagically via network or serial."""
     try:
         ip_address = socket.gethostbyname(port)
-        #print('Connecting to ip', ip_address)
         connect_telnet(port, ip_address, user=user, password=password)
     except (socket.gaierror, ValueError):
         # Doesn't look like a hostname or IP-address, assume its a serial port
-        #print('connecting to serial', port)
         connect_serial(port, baud=baud, wait=wait)
 
 
@@ -1415,7 +1420,7 @@ def connect_telnet(name, ip_address=None, user='micro', password='python'):
 def connect_serial(port, baud=115200, wait=0):
     """Connect to a MicroPython board via a serial port."""
     if not QUIET:
-        print('Connecting to %s (buffer-size %d)...' % (port, BUFFER_SIZE))
+        print('Connecting to %s (buffer-size %d) ...' % (port, BUFFER_SIZE))
     try:
         dev = DeviceSerial(port, baud, wait)
     except DeviceError as err:
@@ -1514,7 +1519,7 @@ class Device(object):
             if not unhexlify_exists:
                 raise ShellError('rshell needs MicroPython firmware with ubinascii.unhexlify')
         QUIET or print('Retrieving root directories ... ', end='', flush=True)
-        self.root_dirs = ['/{}/'.format(dir) for dir in self.remote_eval(listdir, '/')]
+        self.root_dirs = ['/{}/'.format(dir) for dir in self.remote_eval(list_root_dirs)]
         QUIET or print(' '.join(self.root_dirs))
         QUIET or print('Setting time ... ', end='', flush=True)
         now = self.sync_time()
@@ -1731,7 +1736,7 @@ class DeviceSerial(Device):
             QUIET or sys.stdout.write('\n')
 
         # Send Control-C followed by CR until we get a >>> prompt
-        QUIET or print('Trying to connect to REPL ', end='', flush=True)
+        QUIET or print('Trying to connect to REPL ...', end='', flush=True)
         connected = False
         for _ in range(20):
             pyb.serial.write(b'\x03\r')
@@ -3048,7 +3053,8 @@ def real_main():
               BUFFER_SIZE = USB_BUFFER_SIZE
           else:
               BUFFER_SIZE = UART_BUFFER_SIZE
-        QUIET or print('Using buffer-size of', BUFFER_SIZE)
+        if DEBUG:
+            print('Using buffer-size of', BUFFER_SIZE)
         try:
             connect(args.port, baud=args.baud, wait=args.wait, user=args.user, password=args.password)
         except DeviceError as err:

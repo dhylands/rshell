@@ -3046,7 +3046,8 @@ def real_main():
               BUFFER_SIZE = USB_BUFFER_SIZE
           else:
               BUFFER_SIZE = UART_BUFFER_SIZE
-        QUIET or print('Using buffer-size of', BUFFER_SIZE)
+        if DEBUG:
+            print('Using buffer-size of', BUFFER_SIZE)
         try:
             connect(args.port, baud=args.baud, wait=args.wait, user=args.user, password=args.password)
         except DeviceError as err:

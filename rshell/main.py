@@ -792,6 +792,13 @@ def listdir(dirname):
     return os.listdir(dirname)
 
 
+def list_root_dirs():
+    """Returns a list of filenames contained in the named directory."""
+    import os
+    S_IFDIR = 0o40000
+    return [entry for entry in os.listdir('/') if os.stat('/' + entry)[0] & S_IFDIR]
+
+
 def listdir_matches(match):
     """Returns a list of filenames contained in the named directory.
        Only filenames which start with `match` will be returned.
@@ -1512,7 +1519,7 @@ class Device(object):
             if not unhexlify_exists:
                 raise ShellError('rshell needs MicroPython firmware with ubinascii.unhexlify')
         QUIET or print('Retrieving root directories ... ', end='', flush=True)
-        self.root_dirs = ['/{}/'.format(dir) for dir in self.remote_eval(listdir, '/')]
+        self.root_dirs = ['/{}/'.format(dir) for dir in self.remote_eval(list_root_dirs)]
         QUIET or print(' '.join(self.root_dirs))
         QUIET or print('Setting time ... ', end='', flush=True)
         now = self.sync_time()

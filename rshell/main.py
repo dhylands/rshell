@@ -1413,7 +1413,7 @@ def connect_telnet(name, ip_address=None, user='micro', password='python'):
 def connect_serial(port, baud=115200, wait=0):
     """Connect to a MicroPython board via a serial port."""
     if not QUIET:
-        print('Connecting to %s (buffer-size %d)...' % (port, BUFFER_SIZE))
+        print('Connecting to %s (buffer-size %d) ...' % (port, BUFFER_SIZE))
     try:
         dev = DeviceSerial(port, baud, wait)
     except DeviceError as err:
@@ -1729,7 +1729,7 @@ class DeviceSerial(Device):
             QUIET or sys.stdout.write('\n')
 
         # Send Control-C followed by CR until we get a >>> prompt
-        QUIET or print('Trying to connect to REPL ', end='', flush=True)
+        QUIET or print('Trying to connect to REPL ...', end='', flush=True)
         connected = False
         for _ in range(20):
             pyb.serial.write(b'\x03\r')

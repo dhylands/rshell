@@ -1390,7 +1390,7 @@ def connect(port, baud=115200, user='micro', password='python', wait=0):
         ip_address = socket.gethostbyname(port)
         #print('Connecting to ip', ip_address)
         connect_telnet(port, ip_address, user=user, password=password)
-    except socket.gaierror:
+    except (socket.gaierror, ValueError):
         # Doesn't look like a hostname or IP-address, assume its a serial port
         #print('connecting to serial', port)
         connect_serial(port, baud=baud, wait=wait)

@@ -160,11 +160,15 @@ class Pyboard:
     def close(self):
         self.serial.close()
 
-    def read_until(self, min_num_bytes, ending, timeout=10, data_consumer=None):
-        data = self.serial.read(min_num_bytes)
+    def read_until(self, min_num_bytes, ending, timeout=10, data_consumer=None, hard_timeout=3):
+        if self.serial.inWaiting() > 0:
+            data = self.serial.read(min_num_bytes)
+        else:
+            data = b''
         if data_consumer:
             data_consumer(data)
         timeout_count = 0
+        hard_timeout_count = 0
         while True:
             if data.endswith(ending):
                 break
@@ -176,7 +180,10 @@ class Pyboard:
                 timeout_count = 0
             else:
                 timeout_count += 1
+                hard_timeout_count += 1
                 if timeout is not None and timeout_count >= 100 * timeout:
+                    break
+                if hard_timeout is not None and hard_timeout_count >= 100 * hard_timeout:
                     break
                 time.sleep(0.01)
         return data
@@ -203,7 +210,11 @@ class Pyboard:
             raise PyboardError('could not enter raw repl')
         # By splitting this into 2 reads, it allows boot.py to print stuff,
         # which will show up after the soft reboot and before the raw REPL.
-        data = self.read_until(1, b'raw REPL; CTRL-B to exit\r\n')
+        for _ in range(2):
+            data = self.read_until(1, b'raw REPL; CTRL-B to exit\r\n')
+            if data.endswith(b'raw REPL; CTRL-B to exit\r\n'):
+                break
+            self.serial.write(b'\x03') # ctrl-C: stop running program
         if not data.endswith(b'raw REPL; CTRL-B to exit\r\n'):
             print(data)
             raise PyboardError('could not enter raw repl')

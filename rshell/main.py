@@ -506,6 +506,9 @@ def process_pattern(fn):
 
 def resolve_path(path):
     """Resolves path and converts it into an absolute path."""
+    # if path containes ':' it is a remote path, do not resolve
+    if ':' in path:
+        return path
     if path[0] == '~':
         # ~ or ~user
         path = os.path.expanduser(path)
@@ -547,6 +550,19 @@ def get_dev_and_path(filename):
        If the file is not associated with the remote device, then the dev
        portion of the returned tuple will be None.
     """
+
+    # Check if filename can be split by ':' into a device name and a path.
+    # If so, then we assume that the file is associated with the named device.
+    # if device name is empty then use the default device.
+    if ':' in filename:
+        dev_name, filename = filename.split(':', 1)
+        if dev_name == '':
+            return (DEFAULT_DEV, filename)
+        with DEV_LOCK:
+            for dev in DEVS:
+                if dev.name == dev_name:
+                    return (dev, filename)  
+
     if DEFAULT_DEV:
         if DEFAULT_DEV.is_root_path(filename):
             return (DEFAULT_DEV, filename)

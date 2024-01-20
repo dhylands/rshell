@@ -746,6 +746,11 @@ def lstat(filename):
         rstat = os.lstat(filename)
     except:
         rstat = os.stat(filename)
+        if rstat[0] & 0x4000 != 0 and rstat[8] == 0:
+            # littlefs does some funky stuff with the size field and directories.
+            # For now, we just set the size to 0.
+            # unreasonable.
+            rstat = rstat[:6] + tuple([0]) + rstat[7:]
     return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
 
 

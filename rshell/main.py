@@ -227,6 +227,7 @@ def num_devices():
 def is_micropython_usb_device(port):
     """Checks a USB device to see if it looks like a MicroPython device.
     """
+    global USB_BUFFER_SIZE
     if type(port).__name__ == 'Device':
         # Assume its a pyudev.device.Device
         if ('ID_BUS' not in port or port['ID_BUS'] != 'usb' or
@@ -242,8 +243,11 @@ def is_micropython_usb_device(port):
         return True
     # Check Raspberry Pi Pico
     if usb_id.startswith('usb vid:pid=2e8a:0005'):
-        global USB_BUFFER_SIZE
         USB_BUFFER_SIZE = RPI_PICO_USB_BUFFER_SIZE
+        return True
+    # Check for XIAO ESP32C3
+    if usb_id.startswith('usb vid:pid=303a:4001'):
+        USB_BUFFER_SIZE = 256
         return True
     # Check for Teensy VID:PID
     if usb_id.startswith('usb vid:pid=16c0:0483'):
@@ -325,8 +329,10 @@ def autoscan():
     """autoscan will check all of the serial ports to see if they have
        a matching VID:PID for a MicroPython board.
     """
+    global BUFFER_SIZE
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
+            BUFFER_SIZE = USB_BUFFER_SIZE
             connect_serial(port[0])
 
 
@@ -1386,14 +1392,17 @@ def add_arg(*args, **kwargs):
 
 def connect(port, baud=115200, user='micro', password='python', wait=0):
     """Tries to connect automagically via network or serial."""
-    try:
-        ip_address = socket.gethostbyname(port)
-        #print('Connecting to ip', ip_address)
-        connect_telnet(port, ip_address, user=user, password=password)
-    except (socket.gaierror, ValueError):
-        # Doesn't look like a hostname or IP-address, assume its a serial port
-        #print('connecting to serial', port)
+    if '/' in port:
         connect_serial(port, baud=baud, wait=wait)
+    else:
+        try:
+            ip_address = socket.gethostbyname(port)
+            #print('Connecting to ip', ip_address)
+            connect_telnet(port, ip_address, user=user, password=password)
+        except (socket.gaierror, ValueError):
+            # Doesn't look like a hostname or IP-address, assume its a serial port
+            #print('connecting to serial', port)
+            connect_serial(port, baud=baud, wait=wait)
 
 
 def connect_telnet(name, ip_address=None, user='micro', password='python'):
@@ -1535,8 +1544,12 @@ class Device(object):
 
         self.time_offset = calendar.timegm(epoch_tuple)
         # The pyboard maintains its time as localtime, whereas unix and
-        # esp32 maintain their time as GMT
-        self.adjust_for_timezone = (epoch_tuple[0] != 1970)
+        # esp32 maintain their time as GMT.
+        if self.sysname == 'rp2':
+            # The Pico uses a 1970 epoch, but uses localtime
+            self.adjust_for_timezone = True
+        else:
+            self.adjust_for_timezone = (epoch_tuple[0] != 1970)
 
 
     def check_pyb(self):

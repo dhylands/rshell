@@ -149,8 +149,8 @@ RPI_PICO_USB_BUFFER_SIZE = 32
 UART_BUFFER_SIZE = 32
 BUFFER_SIZE = USB_BUFFER_SIZE
 QUIET = False
-RTS = ''
-DTR = ''
+SERIAL_EXCLUSIVE = True
+
 
 # It turns out that just because pyudev is installed doesn't mean that
 # it can actually be used. So we only bother to try if we're running
@@ -1689,6 +1689,8 @@ class Device(object):
 class DeviceSerial(Device):
 
     def __init__(self, port, baud, wait):
+        global SERIAL_EXCLUSIVE
+
         self.port = port
         self.baud = baud
         self.wait = wait
@@ -1713,7 +1715,8 @@ class DeviceSerial(Device):
         self.dev_name_long = '%s at %d baud' % (port, baud)
 
         try:
-            pyb = Pyboard(port, baudrate=baud, wait=wait, rts=RTS, dtr=DTR)
+            pyb = Pyboard(port, baudrate=baud, 
+                wait=wait, exclusive = SERIAL_EXCLUSIVE)
         except PyboardError as err:
             print(err)
             sys.exit(1)
@@ -2854,21 +2857,19 @@ class Shell(cmd.Cmd):
 
 def real_main():
     """The main program."""
-    global RTS
-    global DTR
+    global BUFFER_SIZE, SERIAL_EXCLUSIVE
+
     try:
         default_baud = int(os.getenv('RSHELL_BAUD'))
     except:
         default_baud = 115200
     default_port = os.getenv('RSHELL_PORT')
-    default_rts = os.getenv('RSHELL_RTS') or RTS
-    default_dtr = os.getenv('RSHELL_DTR') or DTR
     default_user = os.getenv('RSHELL_USER') or 'micro'
     default_password = os.getenv('RSHELL_PASSWORD') or 'python'
     default_editor = os.getenv('RSHELL_EDITOR') or os.getenv('VISUAL') or os.getenv('EDITOR') or 'vi'
     default_color = sys.stdout.isatty()
     default_nocolor = not default_color
-    global BUFFER_SIZE
+
     try:
         default_buffer_size = int(os.getenv('RSHELL_BUFFER_SIZE'))
     except:
@@ -2904,18 +2905,6 @@ def real_main():
         default=default_port
     )
     parser.add_argument(
-        "--rts",
-        dest="rts",
-        help="Set the RTS state (default '%s')" % default_rts,
-        default=default_rts
-    )
-    parser.add_argument(
-        "--dtr",
-        dest="dtr",
-        help="Set the DTR state (default '%s')" % default_dtr,
-        default=default_dtr
-    )
-    parser.add_argument(
         "-u", "--user",
         dest="user",
         help="Set username to use (default '%s')" % default_user,
@@ -2943,6 +2932,14 @@ def real_main():
         dest="debug",
         action="store_true",
         help="Enable debug features",
+        default=False
+    )
+    parser.add_argument(
+        "--noexclusive",
+        dest="no_exclusive",
+        action="store_true",
+        help="Open the serial port Not use exclusive access mode"
+            " (default SERIAL_EXCLUSIVE is True)",
         default=False
     )
     parser.add_argument(
@@ -3047,8 +3044,9 @@ def real_main():
 
     global ASCII_XFER
     ASCII_XFER = args.ascii_xfer
-    RTS = args.rts
-    DTR = args.dtr
+
+    if args.no_exclusive:
+        SERIAL_EXCLUSIVE = False
 
     if args.list:
         listports()

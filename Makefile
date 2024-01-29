@@ -1,3 +1,7 @@
+#
+# Note: My setup uses the username/password stored in the ~/.pypirc file
+#
+
 test:
 	./tests/test-rshell.sh
 
@@ -5,23 +9,18 @@ test:
 sdist:
 	python3 setup.py sdist
 
-# Registers this package on the pypi test server
-register-test:
-	python3 setup.py register -r pypitest
-
 # Creates the distribution tarball and uploads to the pypi test server
 upload-test:
 	rm -rf dist/*
 	python3 setup.py sdist
-	twine upload -u dhylands --repository-url https://test.pypi.org/legacy/ dist/*
+	twine upload -r testpypi dist/*
 
 # Creates the distribution tarball and uploads to the pypi live server
 upload:
-	#python3 setup.py sdist upload -r pypi
 	rm -rf dist/*
 	python3 setup.py sdist
-	twine upload -u dhylands dist/*
+	twine upload -r pypi dist/*
 
 # Registers this package on the pypi live server
-register:
-	python3 setup.py register -r pypi
+requirements:
+	pip install -r requirements.txt

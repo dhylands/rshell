@@ -245,7 +245,7 @@ def is_micropython_usb_device(port):
     if usb_id.startswith('usb vid:pid=2e8a:0005'):
         USB_BUFFER_SIZE = RPI_PICO_USB_BUFFER_SIZE
         return True
-    # Check for XIAO ESP32C3
+    # Check for XIAO ESP32S3
     if usb_id.startswith('usb vid:pid=303a:4001'):
         USB_BUFFER_SIZE = 256
         return True

@@ -17,7 +17,7 @@ into and out of your pyboard.
 When using the commands, the /flash directory, and the /sdcard directory
 (if an sdcard is inserted) are considered to be on the pyboard, and all
 other directories are considered to be on the host. For an ESP based board you
-can only reference its directory by using the board name e.g. /pyboard etc..
+can only reference its directory by using the board name e.g. /pyboard etc.
 
 NOTE: rshell requires a fairly recent version of the MicroPython
 firmware, specifically one which contains the ubinascii.unhexlify
@@ -524,7 +524,7 @@ A single pattern may be specified. Pattern matching is performed
 according to a subset of the Unix rules (see below). Directories
 can only be removed if the recursive argument is provided.
 
-Beware of rm -r * or worse.
+Beware of :code:`rm -r *` or worse.
 
 rsync
 -----

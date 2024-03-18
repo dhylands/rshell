@@ -227,6 +227,7 @@ def num_devices():
 def is_micropython_usb_device(port):
     """Checks a USB device to see if it looks like a MicroPython device.
     """
+    global USB_BUFFER_SIZE
     if type(port).__name__ == 'Device':
         # Assume its a pyudev.device.Device
         if ('ID_BUS' not in port or port['ID_BUS'] != 'usb' or
@@ -242,8 +243,11 @@ def is_micropython_usb_device(port):
         return True
     # Check Raspberry Pi Pico
     if usb_id.startswith('usb vid:pid=2e8a:0005'):
-        global USB_BUFFER_SIZE
         USB_BUFFER_SIZE = RPI_PICO_USB_BUFFER_SIZE
+        return True
+    # Check for XIAO ESP32S3
+    if usb_id.startswith('usb vid:pid=303a:4001'):
+        USB_BUFFER_SIZE = 256
         return True
     # Check for Teensy VID:PID
     if usb_id.startswith('usb vid:pid=16c0:0483'):
@@ -325,9 +329,9 @@ def autoscan():
     """autoscan will check all of the serial ports to see if they have
        a matching VID:PID for a MicroPython board.
     """
+    global BUFFER_SIZE
     for port in serial.tools.list_ports.comports():
         if is_micropython_usb_device(port):
-            global BUFFER_SIZE
             BUFFER_SIZE = USB_BUFFER_SIZE
             connect_serial(port[0])
 
@@ -742,6 +746,11 @@ def lstat(filename):
         rstat = os.lstat(filename)
     except:
         rstat = os.stat(filename)
+        if rstat[0] & 0x4000 != 0 and rstat[8] == 0:
+            # littlefs does some funky stuff with the size field and directories.
+            # For now, we just set the size to 0.
+            # unreasonable.
+            rstat = rstat[:6] + tuple([0]) + rstat[7:]
     return rstat[:7] + tuple(tim + TIME_OFFSET for tim in rstat[7:])
 
 
@@ -821,6 +830,8 @@ def listdir_matches(match):
             # This can happen when a symlink points to a non-existant file.
             pass
         return filename
+    if not os.path.isdir(dirname):
+        return []
     matches = [add_suffix_if_dir(result_prefix + filename)
                for filename in os.listdir(dirname) if filename.startswith(match_prefix)]
     return matches
@@ -1072,7 +1083,10 @@ def set_time(rtc_time):
 def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
     """Function which runs on the pyboard. Matches up with send_file_to_remote."""
     import sys
-    import ubinascii
+    try:
+        import ubinascii
+    except:
+        import binascii as ubinascii
     import os
     if HAS_BUFFER:
         try:
@@ -1184,7 +1198,10 @@ def recv_file_from_remote(dev, src_filename, dst_file, filesize):
 def send_file_to_host(src_filename, dst_file, filesize):
     """Function which runs on the pyboard. Matches up with recv_file_from_remote."""
     import sys
-    import ubinascii
+    try:
+        import ubinascii
+    except:
+        import binascii as ubinascii
     try:
         with open(src_filename, 'rb') as src_file:
             bytes_remaining = filesize
@@ -1235,7 +1252,10 @@ def test_readinto():
 
 def test_unhexlify():
     """Checks the micropython firmware to see if ubinascii.unhexlify exists."""
-    import ubinascii
+    try:
+        import ubinascii
+    except:
+        import binascii as ubinascii
     try:
         _ = ubinascii.unhexlify
         return True
@@ -1379,14 +1399,17 @@ def add_arg(*args, **kwargs):
 
 def connect(port, baud=115200, user='micro', password='python', wait=0):
     """Tries to connect automagically via network or serial."""
-    try:
-        ip_address = socket.gethostbyname(port)
-        #print('Connecting to ip', ip_address)
-        connect_telnet(port, ip_address, user=user, password=password)
-    except socket.gaierror:
-        # Doesn't look like a hostname or IP-address, assume its a serial port
-        #print('connecting to serial', port)
+    if '/' in port:
         connect_serial(port, baud=baud, wait=wait)
+    else:
+        try:
+            ip_address = socket.gethostbyname(port)
+            #print('Connecting to ip', ip_address)
+            connect_telnet(port, ip_address, user=user, password=password)
+        except (socket.gaierror, ValueError):
+            # Doesn't look like a hostname or IP-address, assume its a serial port
+            #print('connecting to serial', port)
+            connect_serial(port, baud=baud, wait=wait)
 
 
 def connect_telnet(name, ip_address=None, user='micro', password='python'):
@@ -1528,8 +1551,12 @@ class Device(object):
 
         self.time_offset = calendar.timegm(epoch_tuple)
         # The pyboard maintains its time as localtime, whereas unix and
-        # esp32 maintain their time as GMT
-        self.adjust_for_timezone = (epoch_tuple[0] != 1970)
+        # esp32 maintain their time as GMT.
+        if self.sysname == 'rp2':
+            # The Pico uses a 1970 epoch, but uses localtime
+            self.adjust_for_timezone = True
+        else:
+            self.adjust_for_timezone = (epoch_tuple[0] != 1970)
 
 
     def check_pyb(self):

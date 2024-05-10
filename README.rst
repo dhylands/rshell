@@ -378,6 +378,25 @@ and destination, it will only be copied if the source is newer than the
 destination.
 
 
+df
+--
+
+::
+
+    usage: df [-b|-h|-H]
+
+    Report file system space usage
+
+    optional arguments:
+    --help                show this help message and exit
+    -b, --bytes           Prints sizes in bytes
+    -h, --human-readable  Prints sizes in a human-readable format using power of 1024
+    -H, --si              Prints sizes in a human-readable format using power of 1000
+
+Gets filesystem available space based on statvfs. Granularity is limited 
+to filesystem block size.
+
+
 echo
 ----
 

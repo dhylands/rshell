@@ -20,6 +20,7 @@
 
 import sys
 try:
+    import rshell.dfutils as dfutils
     from rshell.getch import getch
     from rshell.pyboard import Pyboard, PyboardError
     from rshell.version import __version__
@@ -711,6 +712,15 @@ def eval_str(string):
     """Executes a string containing python code."""
     output = eval(string)
     return output
+
+
+def get_vfs_stats(filename):
+    """Returns filesystem statistics."""
+    import os
+    try:
+        return os.statvfs(filename)
+    except OSError:
+        return -1
 
 
 def get_filesize(filename):
@@ -2006,7 +2016,8 @@ class Shell(cmd.Cmd):
         parser = argparse.ArgumentParser(
             prog=command,
             usage='\n'.join(usage),
-            description='\n'.join(description)
+            description='\n'.join(description),
+            conflict_handler='resolve'
         )
         for args, kwargs in argparse_args:
             parser.add_argument(*args, **kwargs)
@@ -2580,6 +2591,70 @@ class Shell(cmd.Cmd):
                                 files.append(decorated_filename(filename, stat))
             if len(files) > 0:
                 print_cols(sorted(files), self.print, self.columns)
+
+    argparse_df = (
+        add_arg(
+            '-b', '--bytes',
+            dest='byte_sizes',
+            action='store_true',
+            help='Prints sizes in bytes',
+            default=False
+        ),
+        add_arg(
+            '-h', '--human-readable',
+            dest='human_readable',
+            action='store_true',
+            help='Prints sizes in a human-readable format using power of 1024',
+            default=False
+        ),
+        add_arg(
+            '-H', '--si',
+            dest='human_readable_si',
+            action='store_true',
+            help='Prints sizes in a human-readable format using power of 1000',
+            default=False
+        ),
+    )
+
+    def complete_df(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
+
+
+    def do_df(self, line):
+        """df [-b|-h|-H]
+
+           Report file system space usage
+        """
+        args = self.line_to_args(line)
+
+        if args.byte_sizes:
+            columns = dfutils.create_byte_sizes_columns(dfutils.DByteFormat.BYTES)
+        elif args.human_readable:
+            columns = dfutils.create_byte_sizes_columns(dfutils.DByteFormat.HUMAN)
+        elif args.human_readable_si:
+            columns = dfutils.create_byte_sizes_columns(dfutils.DByteFormat.HUMAN_SI)
+        else:
+            columns = dfutils.create_block_sizes_columns()
+
+        table = []
+        widths = [len(col.title()) for col in columns]
+        with DEV_LOCK:
+            for dev in DEVS:
+                for dir in dev.root_dirs:
+                    stats = dev.remote_eval(get_vfs_stats, dir)
+                    row = [col.formatted(stats, dev.name, dir) for col in columns]
+                    table.append(row)
+                    widths = [max(len(val), widths[i]) for i, val in enumerate(row)]
+        col_formatters = []
+        for i, width in enumerate(widths):
+            # first and last row should be aligned to the left, others to the right
+            alignment = '<' if i == 0 or i == len(widths) - 1 else '>'
+            col_formatters.append('{:' + alignment + str(width) + 's}')
+        row_f = "  ".join(col_formatters)
+        print(row_f.format(*[col.title() for col in columns]))
+        for row in table:
+            print(row_f.format(*row))
+
 
     def complete_mkdir(self, text, line, begidx, endidx):
         return self.filename_complete(text, line, begidx, endidx)

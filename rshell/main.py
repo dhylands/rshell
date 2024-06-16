@@ -238,6 +238,9 @@ def is_micropython_usb_device(port):
     else:
         # Assume its a port from serial.tools.list_ports.comports()
         usb_id = port[2].lower()
+        if 'micropython' in port[1].lower():
+            # We assume that any device with micropython' in the product name is ok
+            return True
     # We don't check the last digit of the PID since there are 3 possible
     # values.
     if usb_id.startswith('usb vid:pid=f055:980'):

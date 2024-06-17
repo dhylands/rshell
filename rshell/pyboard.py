@@ -124,38 +124,69 @@ class Pyboard:
         if device and device[0].isdigit() and device[-1].isdigit() and device.count('.') == 3:
             # device looks like an IP address
             self.serial = TelnetToSerial(device, user, password, read_timeout=10)
+        elif device.startswith('rfc2217://'):
+            self.openRfc2217Serial(device, baudrate, wait, rts, dtr)
         else:
-            import serial
-            delayed = False
-            if serial.VERSION == '3.0':
-                self.serial = serial.Serial(baudrate=baudrate, inter_byte_timeout=1)
-            else:
-                self.serial = serial.Serial(baudrate=baudrate, interCharTimeout=1)
-            if rts != '':
-                self.serial.rts = parse_bool(rts)
-            if dtr != '':
-                self.serial.dtr = parse_bool(dtr)
-            self.serial.port = device
-            for attempt in range(wait + 1):
-                try:
-                    # Assigning the port attribute will attempt to open the port
-                    self.serial.open()
-                    break
-                except (OSError, IOError): # Py2 and Py3 have different errors
-                    if wait == 0:
-                        continue
-                    if attempt == 0:
-                        sys.stdout.write('Waiting {} seconds for pyboard '.format(wait))
-                        delayed = True
-                time.sleep(1)
-                sys.stdout.write('.')
-                sys.stdout.flush()
-            else:
-                if delayed:
-                    print('')
-                raise PyboardError('failed to access ' + device)
+            self.openSerial(device, baudrate, wait, rts, dtr)
+
+    def openSerial(self, device, baudrate=115200, wait=0, rts='', dtr=''):
+        import serial
+        delayed = False
+        if serial.VERSION == '3.0':
+            self.serial = serial.Serial(baudrate=baudrate, inter_byte_timeout=1)
+        else:
+            self.serial = serial.Serial(baudrate=baudrate, interCharTimeout=1)
+        if rts != '':
+            self.serial.rts = parse_bool(rts)
+        if dtr != '':
+            self.serial.dtr = parse_bool(dtr)
+        self.serial.port = device
+        for attempt in range(wait + 1):
+            try:
+                # Assigning the port attribute will attempt to open the port
+                self.serial.open()
+                break
+            except (OSError, IOError): # Py2 and Py3 have different errors
+                if wait == 0:
+                    continue
+                if attempt == 0:
+                    sys.stdout.write('Waiting {} seconds for pyboard '.format(wait))
+                    delayed = True
+            time.sleep(1)
+            sys.stdout.write('.')
+            sys.stdout.flush()
+        else:
             if delayed:
                 print('')
+            raise PyboardError('failed to access ' + device)
+            if delayed:
+                print('')
+
+    def openRfc2217Serial(self, device, baudrate=115200,  wait=0, rts='', dtr=''):
+        delayed = False
+        for attempt in range(wait + 1):
+            try:
+                # Try to open rfc2217 serial port
+                import serial
+                self.serial = serial.serial_for_url(device, baudrate=baudrate, rtscts=parse_bool(rts), dsrdtr=parse_bool(dtr))
+                break
+            except (BrokenPipeError, OSError, IOError): # Py2 and Py3 have different errors
+                if wait == 0:
+                    continue
+                if attempt == 0:
+                    sys.stdout.write('Waiting {} seconds for rfc2217 pipe to be open '.format(wait))
+                    delayed = True
+            time.sleep(1)
+            sys.stdout.write('.')
+            sys.stdout.flush()
+        else:
+            if delayed:
+                print('')
+            raise PyboardError('failed to access ' + device)
+        if delayed:
+            print('')
+
+
 
     def close(self):
         self.serial.close()

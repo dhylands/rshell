@@ -128,9 +128,9 @@ class Pyboard:
             import serial
             delayed = False
             if serial.VERSION == '3.0':
-                self.serial = serial.Serial(baudrate=baudrate, inter_byte_timeout=1)
+                self.serial = serial.Serial(baudrate=baudrate, inter_byte_timeout=1, timeout=0.5)
             else:
-                self.serial = serial.Serial(baudrate=baudrate, interCharTimeout=1)
+                self.serial = serial.Serial(baudrate=baudrate, interCharTimeout=1, timeout=0.5)
             if rts != '':
                 self.serial.rts = parse_bool(rts)
             if dtr != '':

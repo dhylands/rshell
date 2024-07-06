@@ -245,12 +245,19 @@ def is_micropython_usb_device(port):
     # values.
     if usb_id.startswith('usb vid:pid=f055:980'):
         return True
+    # EPS32_GENERIC_S3
+    if usb_id.startswith('usb vid:pid=1a86:55d3'):
+        return True
     # Check Raspberry Pi Pico
     if usb_id.startswith('usb vid:pid=2e8a:0005'):
         USB_BUFFER_SIZE = RPI_PICO_USB_BUFFER_SIZE
         return True
     # Check for XIAO ESP32S3
     if usb_id.startswith('usb vid:pid=303a:4001'):
+        USB_BUFFER_SIZE = 256
+        return True
+    # Check for UM_TINYS3 firmware
+    if usb_id.startswith('usb vid:pid=303a:80d1'):
         USB_BUFFER_SIZE = 256
         return True
     # Check for Teensy VID:PID

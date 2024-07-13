@@ -1564,7 +1564,10 @@ class Device(object):
             print('----')
         self.dev_name_short = self.name
         QUIET or print('Retrieving time epoch ... ', end='', flush=True)
-        epoch_tuple = self.remote_eval(get_time_epoch)
+        try:
+            epoch_tuple = self.remote_eval(get_time_epoch)
+        except Exception:
+            epoch_tuple = (2000, 1, 1, 0, 0, 0, 0, 1, -1)
         if len(epoch_tuple) == 8:
             epoch_tuple = epoch_tuple + (0,)
         QUIET or print(time.strftime('%b %d, %Y', epoch_tuple))

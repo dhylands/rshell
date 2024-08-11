@@ -1448,6 +1448,15 @@ def connect_telnet(name, ip_address=None, user='micro', password='python'):
     add_device(dev)
 
 
+def connect_ble(mac):
+    if not QUIET:
+        if mac == "ble":
+            print('Connecting ble...')
+        else:
+            print('Connecting ble to %s...' % (mac))
+    dev = DeviceBle(mac)
+    add_device(dev)
+
 def connect_serial(port, baud=115200, wait=0):
     """Connect to a MicroPython board via a serial port."""
     if not QUIET:
@@ -1842,6 +1851,32 @@ class DeviceNet(Device):
     @timeout.setter
     def timeout(self, value):
         """There is no equivalent to timeout for the telnet connection."""
+        pass
+
+
+class DeviceBle(Device):
+
+    def __init__(self, mac):
+        self.dev_name_short = 'mpus ({})'.format(mac, "" if mac == "ble" else mac)
+        self.dev_name_long = self.dev_name_short
+
+        try:
+            pyb = Pyboard(mac)
+        except KeyboardInterrupt:
+            raise DeviceError('Interrupted')
+        Device.__init__(self, pyb)
+
+    def default_board_name(self):
+        return 'mpus'
+
+    @property
+    def timeout(self):
+        """Not implemented for the ble connection."""
+        return None
+
+    @timeout.setter
+    def timeout(self, value):
+        """Not implemented for the ble connection."""
         pass
 
 
@@ -2266,6 +2301,7 @@ class Shell(cmd.Cmd):
         """connect TYPE TYPE_PARAMS
            connect serial port [baud]
            connect telnet ip-address-or-name
+           connect ble [mac-addr]
 
            Connects a pyboard to rshell.
         """
@@ -2295,6 +2331,12 @@ class Shell(cmd.Cmd):
                 return
             name = args[1]
             connect_telnet(name)
+        elif connect_type == "ble":
+            if num_args < 2:
+                mac = "ble"
+            else:
+                mac = args[1]
+            connect_ble(mac)
         else:
             print_err('Unrecognized connection TYPE: {}'.format(connect_type))
 

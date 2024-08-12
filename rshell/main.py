@@ -617,6 +617,35 @@ def auto(func, filename, *args, **kwargs):
         return func(dev_filename, *args, **kwargs)
     return dev.remote_eval(func, dev_filename, *args, **kwargs)
 
+def tree(root_path, max_depth=None):
+    """List directory by tree view"""
+    import os
+    _outputs = []
+    def _tree(path: str, depth: int, max_depth: int):
+        T_FORK = '├──'
+        T_END  = '└──'
+        indent = ' ' + (' ' * (4 * depth))
+        findex = 0
+        totals = len(os.listdir(path))
+        for group in os.ilistdir(path): # -> (name, type, inode[, size])
+            fname = group[0]
+            if findex == totals - 1:
+                _outputs.append(indent + T_END + ' ' + fname)
+            else:
+                _outputs.append(indent + T_FORK + ' ' + fname)
+            # cursive dir
+            if group[1] == 0x4000:
+                p = ('' if path == '/' else path) + '/' + fname
+                if max_depth != None:
+                    if depth + 1 < max_depth:
+                        _tree(p, depth + 1, max_depth)
+                else:
+                    _tree(p, depth + 1, max_depth)
+            findex += 1
+    if root_path == None: root_path = os.getcwd()
+    _outputs.append(f"'{root_path}'")
+    _tree(root_path, 0, max_depth)
+    return '\n'.join(_outputs)
 
 def board_name(default):
     """Returns the boards name (if available)."""
@@ -2961,6 +2990,42 @@ class Shell(cmd.Cmd):
         if args.dry_run or verbose:
             self.print(f"Done.")
 
+    argparse_tree = (
+        add_arg(
+            '-d', '--depth',
+            dest='depth',
+            help='max depth',
+        ),
+        add_arg(
+            'path',
+            metavar='DIR',
+            help='Directorie to tree'
+        ),
+    )
+
+    def complete_tree(self, text, line, begidx, endidx):
+        return self.filename_complete(text, line, begidx, endidx)
+
+    def do_tree(self, line):
+        """tree [-d|--depth] DIR...            List files/folders by a tree view
+
+           List files/folders by a tree view, use '--depth' to specify the max depth of the tree
+        """
+        args = self.line_to_args(line)
+        dirpath = resolve_path(args.path)
+        depth = int(args.depth) if args.depth != None else None
+        dev, filepath = get_dev_and_path(dirpath)
+        if dev == None:
+            print_err("no such dir '{}' on micropython device !".format(dirpath))
+            return
+        mode = auto(get_mode, filepath)
+        if not mode_exists(mode):
+            print_err("'{}' not exist !".format(dirpath))
+            return
+        if not mode_isdir(mode):
+            print_err("'{}' is not a dir !".format(dirpath))
+            return
+        self.print(dev.remote(tree, filepath, depth).decode())
 
 def real_main():
     """The main program."""

@@ -2948,18 +2948,17 @@ class Shell(cmd.Cmd):
 
            Synchronizes a destination directory tree with a source directory tree.
         """
+        QUIET or self.print(f"Executing 'rsync {line}' ...")
         args = self.line_to_args(line)
         src_dir = resolve_path(args.src_dir)
         dst_dir = resolve_path(args.dst_dir)
         verbose = not args.quiet
         pf = lambda *args : None
         if args.dry_run or verbose:
-            self.print(f"Executing 'rsync {line}' ...")
             pf = lambda *args: self.print(' ' + ' '.join(str(arg) for arg in args))
         rsync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
              print_func=pf, recursed=False, sync_hidden=args.all)
-        if args.dry_run or verbose:
-            self.print(f"Done.")
+        QUIET or self.print(f"Done.")
 
 
 def real_main():

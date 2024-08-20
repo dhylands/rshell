@@ -348,7 +348,7 @@ def autoscan():
 
 
 def extra_info(port):
-    """Collects the serial nunber and manufacturer into a string, if
+    """Collects the serial number and manufacturer into a string, if
        the fields are available."""
     extra_items = []
     if port.manufacturer:
@@ -847,7 +847,7 @@ def listdir_matches(match):
             if (os.stat(filename)[0] & 0x4000) != 0:
                 return filename + '/'
         except FileNotFoundError:
-            # This can happen when a symlink points to a non-existant file.
+            # This can happen when a symlink points to a non-existent file.
             pass
         return filename
     if not os.path.isdir(dirname):
@@ -1418,7 +1418,7 @@ def add_arg(*args, **kwargs):
 
 
 def connect(port, baud=115200, user='micro', password='python', wait=0):
-    """Tries to connect automagically via network or serial."""
+    """Tries to connect automatically via network or serial."""
     if '/' in port:
         connect_serial(port, baud=baud, wait=wait)
     else:
@@ -2683,7 +2683,7 @@ class Shell(cmd.Cmd):
                 print_err('Unable to create %s' % filename)
 
     def repl_serial_to_stdout(self, dev):
-        """Runs as a thread which has a sole purpose of readding bytes from
+        """Runs as a thread which has a sole purpose of reading bytes from
            the serial port and writing them to stdout. Used by do_repl.
         """
         with self.serial_reader_running:

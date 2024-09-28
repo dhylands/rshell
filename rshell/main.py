@@ -266,6 +266,15 @@ def is_micropython_usb_device(port):
     # Check for LEGO Technic Large Hub
     if usb_id.startswith('usb vid:pid=0694:0010'):
         return True
+    # Check for CH340-based devices (ESP8266 boards)
+    if usb_id.startswith('usb vid:pid=1a86:7523'):
+        return True
+    # Check for CH340-based devices (some ESP32 boards)
+    if usb_id.startswith('usb vid:pid=1a86:7522'):
+        return True
+    # Check for CP210x-based devices (ESP32 boards)
+    if usb_id.startswith('usb vid:pid=10c4:ea60'):
+        return True
     return False
 
 

@@ -63,7 +63,7 @@ One way to do this is to ensure that your user is added to the dialout group, us
 
 
 Another way, is to use udev rules to modify the permissions on the serial port. There are some instructions
-on the [micropython wiki](https://github.com/micropython/micropython/wiki/Board-STM32F407-Discovery#programming-from-linux-via-dfu)
+on the `micropython wiki <https://github.com/micropython/micropython/wiki/Board-STM32F407-Discovery#programming-from-linux-via-dfu>`_
 that you can use to setup your udev rules (you don't need to install dfu-utils just to update the permissions).
 
 Sample Session

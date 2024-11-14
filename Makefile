@@ -13,13 +13,13 @@ sdist:
 upload-test:
 	rm -rf dist/*
 	python3 setup.py sdist
-	twine upload -r testpypi dist/*
+	twine upload -r testpypi-rshell dist/*
 
 # Creates the distribution tarball and uploads to the pypi live server
 upload:
 	rm -rf dist/*
 	python3 setup.py sdist
-	twine upload -r pypi dist/*
+	twine upload -r pypi-rshell dist/*
 
 # Registers this package on the pypi live server
 requirements:

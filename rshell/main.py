@@ -1126,9 +1126,11 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
             buf_size = BUFFER_SIZE
             write_buf = bytearray(buf_size)
             read_buf = bytearray(buf_size)
+
+            # Send XON (DC1) signal to the host to inform it we are ready to receive new data
+            sys.stdout.write('\x11')
+
             while bytes_remaining > 0:
-                # Send back an ack as a form of flow control
-                sys.stdout.write('\x06')
                 read_size = min(bytes_remaining, buf_size)
                 buf_remaining = read_size
                 buf_index = 0
@@ -1150,6 +1152,10 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
                 if hasattr(os, 'sync'):
                     os.sync()
                 bytes_remaining -= read_size
+
+                # Send back an ack as a form of flow control
+                sys.stdout.write('\x06')
+
         return True
     except:
         return False
@@ -1162,13 +1168,14 @@ def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
     bytes_remaining = filesize
     save_timeout = dev.timeout
     dev.timeout = 2
-    while bytes_remaining > 0:
-        # Wait for ack so we don't get too far ahead of the remote
-        ack = dev.read(1)
-        if ack is None or ack != b'\x06':
-            sys.stderr.write("timed out or error in transfer to remote: {!r}\n".format(ack))
-            sys.exit(2)
 
+    # Block waiting for XON (DC1) signal from remote before sending data
+    xon = dev.read(1)
+    if not xon or xon != b'\x11':
+        sys.stderr.write("timed out expecting XON signal from remote, received: {!r}\n".format(xon))
+        sys.exit(2)
+
+    while bytes_remaining > 0:
         if HAS_BUFFER:
             buf_size = BUFFER_SIZE
         else:
@@ -1181,6 +1188,13 @@ def send_file_to_remote(dev, src_file, dst_filename, filesize, dst_mode='wb'):
             dev.write(buf)
         else:
             dev.write(binascii.hexlify(buf))
+
+        # Wait for ack so we don't get too far ahead of the remote
+        ack = dev.read(1)
+        if ack is None or ack != b'\x06':
+            sys.stderr.write("timed out or error in transfer to remote: {!r}\n".format(ack))
+            sys.exit(2)
+
         bytes_remaining -= read_size
     #sys.stdout.write('\r')
     dev.timeout = save_timeout

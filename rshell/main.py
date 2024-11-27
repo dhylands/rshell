@@ -1138,7 +1138,7 @@ def recv_file_from_host(src_file, dst_filename, filesize, dst_mode='wb'):
                     else:
                         bytes_read = sys.stdin.readinto(read_buf, read_size)
                     # The following sleep is required for the RPi Pico
-                    #rp2: time.sleep_ms(20)
+                    #rp2: time.sleep_ms(50)
                     if bytes_read > 0:
                         write_buf[buf_index:bytes_read] = read_buf[0:bytes_read]
                         buf_index += bytes_read

@@ -1080,7 +1080,9 @@ def set_time(rtc_time):
                     rtc.datetime(rtc_time)
                 except:
                     # ESP32 (at least Loboris port) uses rtc.init()
-                    rtc.init(rtc_time)
+                    # Arguments order for machine.RTC().init ->
+                    # (year, month, mday, hour, minute, second, weekday, yearday)
+                    rtc.init((rtc[0], rtc[1], rtc[2], rtc[4], rtc[5], rtc[6], rtc[3], rtc[7]))
             except:
                 # Check for the Raspberry Pi Pico - machine.RTC doesn't exist
                 try:

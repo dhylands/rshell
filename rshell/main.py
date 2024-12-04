@@ -172,6 +172,7 @@ QUIT_REPL_BYTE = bytes((ord(QUIT_REPL_CHAR) - ord('@'),))  # Control-X
 DELIMS = ' \t\n>;'
 
 TIME_OFFSET = 0
+ERROR = False
 
 DEVS = []
 DEFAULT_DEV = None
@@ -451,6 +452,8 @@ def find_macthing_files(match):
 def print_err(*args, end='\n'):
     """Similar to print, but prints to stderr.
     """
+    global ERROR
+    ERROR = True
     print(*args, end=end, file=sys.stderr)
     sys.stderr.flush()
 
@@ -1980,6 +1983,8 @@ class Shell(cmd.Cmd):
         """
         pass
     def precmd(self, line):
+        global ERROR
+        ERROR = False
         self.stdout = self.smart_stdout
         return line
 
@@ -3182,7 +3187,7 @@ def real_main():
         except KeyboardInterrupt:
             print('')
 
-def main():
+def main() -> int:
     """This main function saves the stdin termios settings, calls real_main,
        and restores stdin termios settings when it returns.
     """
@@ -3199,6 +3204,7 @@ def main():
     finally:
         if save_settings:
             termios.tcsetattr(stdin_fd, termios.TCSANOW, save_settings)
+    sys.exit(int(ERROR))
 
 if __name__ == "__main__":
     main()

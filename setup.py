@@ -1,12 +1,16 @@
 import os
 from setuptools import setup
+from distutils.util import convert_path
 
 import sys
 if sys.version_info < (3,4):
     print('rshell requires Python 3.4 or newer.')
     sys.exit(1)
 
-from rshell.version import __version__
+main_ns = {}
+ver_path = convert_path('rshell/version.py')
+with open(ver_path) as ver_file:
+    exec(ver_file.read(), main_ns)
 
 here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
@@ -14,7 +18,7 @@ with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
 
 setup(
     name = 'rshell',
-    version = __version__,
+    version = main_ns['__version__'],
     author = 'Dave Hylands',
     author_email = 'dhylands@gmail.com',
     description = ('A remote shell for working with MicroPython boards.'),

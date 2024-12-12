@@ -1422,7 +1422,7 @@ def add_arg(*args, **kwargs):
 
 def connect(port, baud=115200, user='micro', password='python', wait=0):
     """Tries to connect automagically via network or serial."""
-    if '/' in port:
+    if '/' in port or re.match("COM\\d+", port, re.IGNORECASE):
         connect_serial(port, baud=baud, wait=wait)
     else:
         try:

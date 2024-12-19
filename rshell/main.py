@@ -55,8 +55,12 @@ import tokenize
 import shlex
 import itertools
 from serial.tools import list_ports
+import importlib
 
 import traceback
+
+# Macros: values are strings or 2-lists
+macros = {}
 
 if sys.platform == 'win32':
     EXIT_STR = 'Use the exit command to exit rshell.'
@@ -152,6 +156,8 @@ BUFFER_SIZE = USB_BUFFER_SIZE
 QUIET = False
 RTS = ''
 DTR = ''
+
+MACFILE_NAME = 'rshell_macros'
 
 # It turns out that just because pyudev is installed doesn't mean that
 # it can actually be used. So we only bother to try if we're running
@@ -2216,6 +2222,78 @@ class Shell(cmd.Cmd):
         else:
             print('No boards connected')
 
+    def complete_m(self, text, line, begidx, endidx):  # Assume macro works on filenames for completion.
+        return self.filename_complete(text, line, begidx, endidx)
+
+    def do_m(self, line):
+        """m macro_name [[arg0] arg1]...
+
+           Expand a macro with args and run.
+        """
+        msg = '''usage m MACRO [[[arg0] arg1] ...]
+        Run macro MACRO with any required arguments.
+        In general args should be regarded as mandatory. In the case where
+        no args are passed to a macro expecting some the macro will be run
+        with each placeholder replaced with an empty string.'''
+        tokens = [x for x in line.split(' ') if x]
+        cmd = tokens[0]
+        if cmd in macros:
+            data = macros[cmd]
+            if isinstance(data, str):
+                go = data
+            else:  # List or tuple: discard help
+                go = data[0]
+            if len(tokens) > 1:  # Args to process
+                try:
+                    to_run = go.format(*tokens[1:])
+                except:
+                    print_err('Macro {} is incompatible with args {}'.format(cmd, tokens[1:]))
+                    return
+            else:
+                to_run = go.format('')
+            self.print(to_run)
+            self.onecmd(to_run)
+        elif cmd == '-h' or cmd == '--help':
+            self.print(msg)
+        else:
+            print_err('Unknown macro', cmd)
+
+    def do_lm(self, line):
+        """lm
+
+           Lists available macros.
+        """
+        msg = '''usage lm [MACRO]
+        list loaded macros.
+        Positional argument
+        MACRO the name of a single macro to list.'''
+        if not macros:
+            print_err('No macros loaded.')
+            return
+        def add_col(l):
+            d = macros[l]
+            sp = ''
+            if isinstance(d, str):
+                cols.append((l, sp, d, '', ''))
+            else:
+                cols.append((l, sp, d[0], sp, d[1]))
+
+        l = line.strip()
+        cols = []
+        if l:
+            if l in macros:
+                add_col(l)
+            elif l == '-h' or l == '--help':
+                self.print(msg)
+                return
+            else:
+                print_err('Unknown macro {}'.format(l))
+                return
+        else:
+            for l in macros:
+                add_col(l)
+        column_print('<<<<<', cols, self.print)
+
     def complete_cat(self, text, line, begidx, endidx):
         return self.filename_complete(text, line, begidx, endidx)
 
@@ -2950,6 +3028,41 @@ class Shell(cmd.Cmd):
         rsync(src_dir, dst_dir, mirror=args.mirror, dry_run=args.dry_run,
              print_func=pf, recursed=False, sync_hidden=args.all)
 
+def load_macros(mod_name=None):
+    """Update the global macros dict.
+    Validate on import to avoid runtime errors as far as possible.
+    """
+    default = mod_name is None
+    if default:
+        mod_name = MACFILE_NAME
+    try:
+        mmod = importlib.import_module(mod_name)
+    except ImportError:
+        if not default:
+            print("Can't import macro module", mod_name)
+        return False
+    except:
+        print("Macro module {} is invalid".format(mod_name))
+        return False
+
+    if hasattr(mmod, 'macros') and isinstance(mmod.macros, dict):
+        md = mmod.macros
+    else:
+        print('Macro module {} has missing or invalid dict.'.format(mod_name))
+        return False
+    for k, v in md.items():
+        if isinstance(v, str):
+            s = v
+        elif isinstance(v, tuple) or isinstance(v, list):
+            s = v[0]
+        else:
+            print('Macro {} is invalid.'.format(k))
+            return False
+        if '\n' in s:
+            print('Invalid multi-line macro {} {}'.format(k, s))
+            return False
+    macros.update(md)
+    return True
 
 def real_main():
     """The main program."""
@@ -3036,6 +3149,11 @@ def real_main():
         "-f", "--file",
         dest="filename",
         help="Specifies a file of commands to process."
+    )
+    parser.add_argument(
+        "-m", "--macros",
+        dest="macro_module",
+        help="Specify a macro module."
     )
     parser.add_argument(
         "-d", "--debug",
@@ -3143,6 +3261,12 @@ def real_main():
             # The readline that comes with OSX screws up colors in the prompt
             global FAKE_INPUT_PROMPT
             FAKE_INPUT_PROMPT = True
+
+    if load_macros():  # Attempt to load default macro module
+        print('Default macro file {} loaded OK.'.format(MACFILE_NAME))
+    if args.macro_module:  # Attempt to load a macro module
+        if load_macros(args.macro_module):
+            print('Macro file {} loaded OK.'.format(args.macro_module))
 
     global ASCII_XFER
     ASCII_XFER = args.ascii_xfer
